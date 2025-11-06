@@ -1,5 +1,18 @@
 import { join } from 'path';
-module.paths.push(join(Editor.App.path, 'node_modules'));
+
+declare const cc: any;
+
+function getCC(): any {
+    if (typeof cc !== 'undefined') {
+        return cc;
+    }
+
+    try {
+        return require('cc');
+    } catch (error) {
+        throw new Error('无法获取 Cocos 引擎实例 (cc)');
+    }
+}
 
 export const methods: { [key: string]: (...any: any) => any } = {
     /**
@@ -7,7 +20,7 @@ export const methods: { [key: string]: (...any: any) => any } = {
      */
     createNewScene() {
         try {
-            const { director, Scene } = require('cc');
+            const { director, Scene } = getCC();
             const scene = new Scene();
             scene.name = 'New Scene';
             director.runScene(scene);
@@ -22,7 +35,7 @@ export const methods: { [key: string]: (...any: any) => any } = {
      */
     addComponentToNode(nodeUuid: string, componentType: string) {
         try {
-            const { director, js } = require('cc');
+            const { director, js } = getCC();
             const scene = director.getScene();
             if (!scene) {
                 return { success: false, error: 'No active scene' };
@@ -57,7 +70,7 @@ export const methods: { [key: string]: (...any: any) => any } = {
      */
     removeComponentFromNode(nodeUuid: string, componentType: string) {
         try {
-            const { director, js } = require('cc');
+            const { director, js } = getCC();
             const scene = director.getScene();
             if (!scene) {
                 return { success: false, error: 'No active scene' };
@@ -90,7 +103,7 @@ export const methods: { [key: string]: (...any: any) => any } = {
      */
     createNode(name: string, parentUuid?: string) {
         try {
-            const { director, Node } = require('cc');
+            const { director, Node } = getCC();
             const scene = director.getScene();
             if (!scene) {
                 return { success: false, error: 'No active scene' };
@@ -124,7 +137,7 @@ export const methods: { [key: string]: (...any: any) => any } = {
      */
     getNodeInfo(nodeUuid: string) {
         try {
-            const { director } = require('cc');
+            const { director } = getCC();
             const scene = director.getScene();
             if (!scene) {
                 return { success: false, error: 'No active scene' };
@@ -162,7 +175,7 @@ export const methods: { [key: string]: (...any: any) => any } = {
      */
     getAllNodes() {
         try {
-            const { director } = require('cc');
+            const { director } = getCC();
             const scene = director.getScene();
             if (!scene) {
                 return { success: false, error: 'No active scene' };
@@ -193,7 +206,7 @@ export const methods: { [key: string]: (...any: any) => any } = {
      */
     findNodeByName(name: string) {
         try {
-            const { director } = require('cc');
+            const { director } = getCC();
             const scene = director.getScene();
             if (!scene) {
                 return { success: false, error: 'No active scene' };
@@ -223,7 +236,7 @@ export const methods: { [key: string]: (...any: any) => any } = {
      */
     getCurrentSceneInfo() {
         try {
-            const { director } = require('cc');
+            const { director } = getCC();
             const scene = director.getScene();
             if (!scene) {
                 return { success: false, error: 'No active scene' };
@@ -247,7 +260,7 @@ export const methods: { [key: string]: (...any: any) => any } = {
      */
     setNodeProperty(nodeUuid: string, property: string, value: any) {
         try {
-            const { director } = require('cc');
+            const { director } = getCC();
             const scene = director.getScene();
             if (!scene) {
                 return { success: false, error: 'No active scene' };
@@ -288,7 +301,7 @@ export const methods: { [key: string]: (...any: any) => any } = {
      */
     getSceneHierarchy(includeComponents: boolean = false) {
         try {
-            const { director } = require('cc');
+            const { director } = getCC();
             const scene = director.getScene();
             if (!scene) {
                 return { success: false, error: 'No active scene' };
@@ -328,7 +341,7 @@ export const methods: { [key: string]: (...any: any) => any } = {
      */
     createPrefabFromNode(nodeUuid: string, prefabPath: string) {
         try {
-            const { director, instantiate } = require('cc');
+            const { director, instantiate } = getCC();
             const scene = director.getScene();
             if (!scene) {
                 return { success: false, error: 'No active scene' };
@@ -359,7 +372,7 @@ export const methods: { [key: string]: (...any: any) => any } = {
      */
     setComponentProperty(nodeUuid: string, componentType: string, property: string, value: any) {
         try {
-            const { director, js } = require('cc');
+            const { director, js } = getCC();
             const scene = director.getScene();
             if (!scene) {
                 return { success: false, error: 'No active scene' };
@@ -381,8 +394,8 @@ export const methods: { [key: string]: (...any: any) => any } = {
                 // 支持 value 为 uuid 或资源路径
                 if (typeof value === 'string') {
                     // 先尝试按 uuid 查找
-                    const assetManager = require('cc').assetManager;
-                    assetManager.resources.load(value, require('cc').SpriteFrame, (err: any, spriteFrame: any) => {
+                    const assetManager = getCC().assetManager;
+                    assetManager.resources.load(value, getCC().SpriteFrame, (err: any, spriteFrame: any) => {
                         if (!err && spriteFrame) {
                             component.spriteFrame = spriteFrame;
                         } else {
@@ -403,8 +416,8 @@ export const methods: { [key: string]: (...any: any) => any } = {
             } else if (property === 'material' && (componentType === 'cc.Sprite' || componentType === 'cc.MeshRenderer')) {
                 // 支持 value 为 uuid 或资源路径
                 if (typeof value === 'string') {
-                    const assetManager = require('cc').assetManager;
-                    assetManager.resources.load(value, require('cc').Material, (err: any, material: any) => {
+                    const assetManager = getCC().assetManager;
+                    assetManager.resources.load(value, getCC().Material, (err: any, material: any) => {
                         if (!err && material) {
                             component.material = material;
                         } else {
@@ -433,3 +446,24 @@ export const methods: { [key: string]: (...any: any) => any } = {
         }
     }
 };
+
+const sceneHandlers: Record<string, (event: any, ...args: any[]) => void> = {};
+
+for (const key of Object.keys(methods)) {
+    sceneHandlers[key] = (event: any, ...args: any[]) => {
+        try {
+            const handler = (methods as any)[key];
+            const result = handler(...args);
+
+            if (result && typeof result.then === 'function') {
+                result.then((value: any) => event.reply(null, value)).catch((error: any) => event.reply(error));
+            } else {
+                event.reply(null, result);
+            }
+        } catch (error) {
+            event.reply(error);
+        }
+    };
+}
+
+module.exports = sceneHandlers;

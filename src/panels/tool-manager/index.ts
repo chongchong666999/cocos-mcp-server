@@ -41,7 +41,7 @@ module.exports = Editor.Panel.define({
     methods: {
         async loadToolManagerState(this: any) {
             try {
-                this.toolManagerState = await Editor.Message.request('cocos-mcp-server', 'getToolManagerState');
+                this.toolManagerState = await Editor.Message.request('cocos-mcp-server', 'get-tool-manager-state');
                 this.currentConfiguration = this.toolManagerState.currentConfiguration;
                 this.configurations = this.toolManagerState.configurations;
                 this.availableTools = this.toolManagerState.availableTools;
@@ -184,7 +184,7 @@ module.exports = Editor.Panel.define({
                 this.updateToolCheckboxes(category, enabled);
 
                 // 然后发送到后端
-                await Editor.Message.request('cocos-mcp-server', 'updateToolStatusBatch', 
+                await Editor.Message.request('cocos-mcp-server', 'update-tool-status-batch', 
                     this.currentConfiguration.id, updates);
                 
             } catch (error) {
@@ -225,7 +225,7 @@ module.exports = Editor.Panel.define({
 
                 // 然后发送到后端
                 console.log(`Sending to backend: configId=${this.currentConfiguration.id}, category=${category}, name=${name}, enabled=${enabled}`);
-                const result = await Editor.Message.request('cocos-mcp-server', 'updateToolStatus', 
+                const result = await Editor.Message.request('cocos-mcp-server', 'update-tool-status', 
                     this.currentConfiguration.id, category, name, enabled);
                 console.log('Backend response:', result);
                 
@@ -324,10 +324,10 @@ module.exports = Editor.Panel.define({
 
             try {
                 if (this.editingConfig) {
-                    await Editor.Message.request('cocos-mcp-server', 'updateToolConfiguration', 
+                    await Editor.Message.request('cocos-mcp-server', 'update-tool-configuration', 
                         this.editingConfig.id, { name, description });
                 } else {
-                    await Editor.Message.request('cocos-mcp-server', 'createToolConfiguration', name, description);
+                    await Editor.Message.request('cocos-mcp-server', 'create-tool-configuration', name, description);
                 }
                 
                 this.hideModal('configModal');
@@ -347,7 +347,7 @@ module.exports = Editor.Panel.define({
             
             if (confirmed) {
                 try {
-                    await Editor.Message.request('cocos-mcp-server', 'deleteToolConfiguration', 
+                    await Editor.Message.request('cocos-mcp-server', 'delete-tool-configuration', 
                         this.currentConfiguration.id);
                     await this.loadToolManagerState();
                 } catch (error) {
@@ -362,7 +362,7 @@ module.exports = Editor.Panel.define({
             if (!configId) return;
 
             try {
-                await Editor.Message.request('cocos-mcp-server', 'setCurrentToolConfiguration', configId);
+                await Editor.Message.request('cocos-mcp-server', 'set-current-tool-configuration', configId);
                 await this.loadToolManagerState();
             } catch (error) {
                 console.error('Failed to apply configuration:', error);
@@ -374,7 +374,7 @@ module.exports = Editor.Panel.define({
             if (!this.currentConfiguration) return;
 
             try {
-                const result = await Editor.Message.request('cocos-mcp-server', 'exportToolConfiguration', 
+                const result = await Editor.Message.request('cocos-mcp-server', 'export-tool-configuration', 
                     this.currentConfiguration.id);
                 
                 Editor.Clipboard.write('text', result.configJson);
@@ -398,7 +398,7 @@ module.exports = Editor.Panel.define({
             }
 
             try {
-                await Editor.Message.request('cocos-mcp-server', 'importToolConfiguration', configJson);
+                await Editor.Message.request('cocos-mcp-server', 'import-tool-configuration', configJson);
                 this.hideModal('importModal');
                 await this.loadToolManagerState();
                 Editor.Dialog.info('导入成功', { detail: '配置已成功导入' });
@@ -431,7 +431,7 @@ module.exports = Editor.Panel.define({
                 this.updateToolsDisplay();
 
                 // 然后发送到后端
-                await Editor.Message.request('cocos-mcp-server', 'updateToolStatusBatch', 
+                await Editor.Message.request('cocos-mcp-server', 'update-tool-status-batch', 
                     this.currentConfiguration.id, updates);
                 
             } catch (error) {
@@ -470,7 +470,7 @@ module.exports = Editor.Panel.define({
                 this.updateToolsDisplay();
 
                 // 然后发送到后端
-                await Editor.Message.request('cocos-mcp-server', 'updateToolStatusBatch', 
+                await Editor.Message.request('cocos-mcp-server', 'update-tool-status-batch', 
                     this.currentConfiguration.id, updates);
                 
             } catch (error) {
@@ -526,7 +526,7 @@ module.exports = Editor.Panel.define({
 
             try {
                 // 确保当前配置已保存到后端
-                await Editor.Message.request('cocos-mcp-server', 'updateToolConfiguration', 
+                await Editor.Message.request('cocos-mcp-server', 'update-tool-configuration', 
                     this.currentConfiguration.id, {
                         name: this.currentConfiguration.name,
                         description: this.currentConfiguration.description,

@@ -1,5 +1,3 @@
-import { join } from 'path';
-
 declare const cc: any;
 
 function getCC(): any {
@@ -12,6 +10,168 @@ function getCC(): any {
     } catch (error) {
         throw new Error('无法获取 Cocos 引擎实例 (cc)');
     }
+}
+
+function toVec3(value: any, fallback: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
+    if (!value) {
+        return { ...fallback };
+    }
+
+    if (typeof value.x === 'number') {
+        return {
+            x: value.x,
+            y: value.y ?? fallback.y,
+            z: value.z ?? fallback.z
+        };
+    }
+
+    if (Array.isArray(value)) {
+        return {
+            x: value[0] ?? fallback.x,
+            y: value[1] ?? fallback.y,
+            z: value[2] ?? fallback.z
+        };
+    }
+
+    return { ...fallback };
+}
+
+function getNodePosition(node: any): { x: number; y: number; z: number } {
+    if (typeof node.getPosition === 'function') {
+        return toVec3(node.getPosition(), { x: 0, y: 0, z: 0 });
+    }
+
+    return toVec3(node.position || { x: node.x, y: node.y, z: node.z }, { x: 0, y: 0, z: 0 });
+}
+
+function getNodeScale(node: any): { x: number; y: number; z: number } {
+    const fallback = { x: 1, y: 1, z: 1 };
+
+    if (node.scale && typeof node.scale === 'object') {
+        return toVec3(node.scale, fallback);
+    }
+
+    if (typeof node.getScale === 'function') {
+        try {
+            const ccInstance = getCC();
+            const Vec3Class = ccInstance?.Vec3;
+            if (Vec3Class) {
+                const out = new Vec3Class();
+                node.getScale(out);
+                return toVec3(out, fallback);
+            }
+        } catch (error) {
+            console.warn('[MCP插件] 获取节点缩放时无法访问 cc.Vec3，改用备用属性。', error);
+        }
+    }
+
+    const uniform = typeof node.scale === 'number' ? node.scale : 1;
+    return {
+        x: node.scaleX ?? uniform,
+        y: node.scaleY ?? uniform,
+        z: node.scaleZ ?? 1
+    };
+}
+
+function getNodeRotation(node: any): { x: number; y: number; z: number; w: number } {
+    const fallback = { x: 0, y: 0, z: 0, w: 1 };
+
+    if (node.rotationQuat && typeof node.rotationQuat.w === 'number') {
+        return {
+            x: node.rotationQuat.x,
+            y: node.rotationQuat.y,
+            z: node.rotationQuat.z,
+            w: node.rotationQuat.w
+        };
+    }
+
+    if (node._quat && typeof node._quat.w === 'number') {
+        return { x: node._quat.x, y: node._quat.y, z: node._quat.z, w: node._quat.w };
+    }
+
+    const ccInstance = getCC();
+    const QuatClass = ccInstance?.Quat;
+
+    if (typeof node.getRotationQuat === 'function') {
+        if (QuatClass) {
+            const out = new QuatClass();
+            node.getRotationQuat(out);
+            return { x: out.x, y: out.y, z: out.z, w: out.w };
+        }
+
+        const quat = node.getRotationQuat();
+        if (quat && typeof quat.w === 'number') {
+            return { x: quat.x, y: quat.y, z: quat.z, w: quat.w };
+        }
+    }
+
+    if (QuatClass) {
+        const quat = new QuatClass();
+        const euler = node.eulerAngles || node._euler || {
+            x: node.rotationX || 0,
+            y: node.rotationY || 0,
+            z: typeof node.angle === 'number'
+                ? -node.angle
+                : (node.rotation || node.rotationZ || 0)
+        };
+
+        try {
+            QuatClass.fromEuler(quat, euler.x || 0, euler.y || 0, euler.z || 0);
+            return { x: quat.x, y: quat.y, z: quat.z, w: quat.w };
+        } catch (error) {
+            console.warn('[MCP插件] 无法转换节点欧拉角为四元数:', error);
+        }
+    }
+
+    return fallback;
+}
+
+function extractComponents(node: any): any[] {
+    const components = node._components || node.components || [];
+    const result: any[] = [];
+
+    if (!Array.isArray(components)) {
+        return result;
+    }
+
+    components.forEach((comp: any) => {
+        if (!comp) {
+            return;
+        }
+
+        result.push({
+            __type__: comp.__classname__ || comp.constructor?.name || 'cc.Component',
+            enabled: comp.enabled !== undefined ? comp.enabled : true,
+            uuid: comp.uuid || comp._id || '',
+            nodeUuid: comp.node?.uuid || node.uuid || node._id || ''
+        });
+    });
+
+    return result;
+}
+
+function buildSceneNode(node: any): any {
+    const nodeData: any = {
+        uuid: node.uuid || node._id || '',
+        name: node.name || node._name || 'Node',
+        type: node.constructor?.name || node.__classname__ || 'cc.Node',
+        active: node.active !== undefined ? node.active : true,
+        layer: node.layer !== undefined ? node.layer : (node._layer || 0),
+        position: getNodePosition(node),
+        rotation: getNodeRotation(node),
+        scale: getNodeScale(node)
+    };
+
+    const comps = extractComponents(node);
+    if (comps.length > 0) {
+        nodeData.__comps__ = comps;
+        nodeData.components = comps;
+    }
+
+    const children = node.children || node._children || [];
+    nodeData.children = Array.isArray(children) ? children.map((child: any) => buildSceneNode(child)) : [];
+
+    return nodeData;
 }
 
 export const methods: { [key: string]: (...any: any) => any } = {
@@ -27,6 +187,21 @@ export const methods: { [key: string]: (...any: any) => any } = {
             return { success: true, message: 'New scene created successfully' };
         } catch (error: any) {
             return { success: false, error: error.message };
+        }
+    },
+
+    getSceneTreeData() {
+        try {
+            const { director } = getCC();
+            const scene = director.getScene();
+            if (!scene) {
+                return null;
+            }
+
+            return buildSceneNode(scene);
+        } catch (error) {
+            console.error('[MCP插件] 获取场景节点树失败:', error);
+            return null;
         }
     },
 

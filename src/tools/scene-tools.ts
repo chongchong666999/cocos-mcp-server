@@ -157,20 +157,92 @@ export class SceneTools implements ToolExecutor {
     }
 
     private async getSceneList(): Promise<ToolResponse> {
-        return new Promise((resolve) => {
-            // Note: query-assets API corrected with proper parameters
-            Editor.Message.request('asset-db', 'query-assets', {
-                pattern: 'db://assets/**/*.scene'
-            }).then((results: any[]) => {
-                const scenes: SceneInfo[] = results.map(asset => ({
-                    name: asset.name,
-                    path: asset.url,
-                    uuid: asset.uuid
-                }));
-                resolve({ success: true, data: scenes });
-            }).catch((err: Error) => {
-                resolve({ success: false, error: err.message });
+        const patterns = ['db://assets/**/*.scene', 'db://assets/**/*.fire'];
+        const errors: string[] = [];
+
+        for (const pattern of patterns) {
+            try {
+                const results = await this.queryScenesViaMessage(pattern);
+                if (results) {
+                    const scenes = this.normalizeSceneResults(results);
+                    if (scenes.length > 0) {
+                        return { success: true, data: scenes };
+                    }
+                    continue;
+                }
+            } catch (err: any) {
+                errors.push(`[Message:${pattern}] ${err?.message || err}`);
+            }
+
+            try {
+                const fallbackResults = await this.queryScenesViaAssetDB(pattern);
+                if (fallbackResults) {
+                    const scenes = this.normalizeSceneResults(fallbackResults);
+                    if (scenes.length > 0) {
+                        return { success: true, data: scenes };
+                    }
+                    continue;
+                }
+            } catch (err: any) {
+                errors.push(`[AssetDB:${pattern}] ${err?.message || err}`);
+            }
+        }
+
+        if (errors.length > 0) {
+            return {
+                success: false,
+                error: errors.join(' | ')
+            };
+        }
+
+        return {
+            success: true,
+            data: [],
+            warning: '未在 assets 目录中找到 .scene 或 .fire 场景文件'
+        };
+    }
+
+    private async queryScenesViaMessage(pattern: string): Promise<any[] | null> {
+        if (!Editor.Message || !Editor.Message.request) {
+            return null;
+        }
+
+        const results = await Editor.Message.request('asset-db', 'query-assets', { pattern });
+        return Array.isArray(results) ? results : [];
+    }
+
+    private async queryScenesViaAssetDB(pattern: string): Promise<any[] | null> {
+        const assetdb = (Editor as any)?.assetdb;
+        if (!assetdb || typeof assetdb.queryAssets !== 'function') {
+            return null;
+        }
+
+        return new Promise((resolve, reject) => {
+            assetdb.queryAssets(pattern, 'scene', (err: Error, results: any[]) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                resolve(Array.isArray(results) ? results : []);
             });
+        });
+    }
+
+    private normalizeSceneResults(results: any[]): SceneInfo[] {
+        if (!Array.isArray(results)) {
+            return [];
+        }
+
+        return results.map((asset: any) => {
+            const url = asset.url || asset.path || '';
+            const nameFromUrl = url.split('/').pop() || '';
+            const cleanName = (asset.name || nameFromUrl).replace(/\.(scene|fire)$/i, '');
+
+            return {
+                name: cleanName || asset.name || 'Unnamed Scene',
+                path: url,
+                uuid: asset.uuid || asset.fileId || asset.fileid || ''
+            } as SceneInfo;
         });
     }
 

@@ -1,4 +1,5 @@
 import { ToolDefinition, ToolResponse, ToolExecutor, SceneInfo } from '../types';
+import logger from '../utils/logger';
 
 export class SceneTools implements ToolExecutor {
     getTools(): ToolDefinition[] {
@@ -248,19 +249,102 @@ export class SceneTools implements ToolExecutor {
 
     private async openScene(scenePath: string): Promise<ToolResponse> {
         return new Promise((resolve) => {
-            // 首先获取场景的UUID
-            Editor.Message.request('asset-db', 'query-uuid', scenePath).then((uuid: string | null) => {
-                if (!uuid) {
-                    throw new Error('Scene not found');
+            logger.info('[scene-tools] Opening scene:', scenePath);
+
+            // Cocos Creator 2.4.x: Use Editor.assetdb to query UUID
+            const editor: any = Editor;
+            const assetdb = editor.assetdb || editor.remote?.assetdb;
+
+            if (!assetdb) {
+                logger.error('[scene-tools] Editor.assetdb not available');
+                resolve({ success: false, error: 'Asset database not available' });
+                return;
+            }
+
+            logger.info('[scene-tools] Querying UUID for scene:', scenePath);
+
+            // Method 1: Try urlToUuid (synchronous method in main process)
+            try {
+                const uuid = assetdb.urlToUuid(scenePath);
+                logger.info('[scene-tools] Got UUID via urlToUuid:', uuid);
+
+                if (uuid) {
+                    // Open scene using IPC message to scene panel
+                    logger.info('[scene-tools] Opening scene with UUID via IPC...');
+                    editor.Ipc.sendToPanel('scene', 'scene:open-by-uuid', uuid);
+
+                    // Wait a bit for the scene to open
+                    setTimeout(() => {
+                        logger.info('[scene-tools] Scene opened successfully');
+                        resolve({ success: true, message: `Scene opened: ${scenePath}` });
+                    }, 500);
+                    return;
                 }
-                
-                // 使用正确的 scene API 打开场景 (需要UUID)
-                return Editor.Message.request('scene', 'open-scene', uuid);
-            }).then(() => {
-                resolve({ success: true, message: `Scene opened: ${scenePath}` });
-            }).catch((err: Error) => {
-                resolve({ success: false, error: err.message });
-            });
+            } catch (e) {
+                logger.warn('[scene-tools] urlToUuid failed:', e);
+            }
+
+            // Method 2: Try queryUuidByUrl (callback-based method)
+            if (typeof assetdb.queryUuidByUrl === 'function') {
+                logger.info('[scene-tools] Trying queryUuidByUrl...');
+                assetdb.queryUuidByUrl(scenePath, (err: Error | null, uuid: string) => {
+                    if (err || !uuid) {
+                        logger.error('[scene-tools] queryUuidByUrl failed:', err);
+                        resolve({ success: false, error: 'Scene not found' });
+                        return;
+                    }
+
+                    logger.info('[scene-tools] Got UUID via queryUuidByUrl:', uuid);
+                    logger.info('[scene-tools] Opening scene with UUID via IPC...');
+                    editor.Ipc.sendToPanel('scene', 'scene:open-by-uuid', uuid);
+
+                    setTimeout(() => {
+                        logger.info('[scene-tools] Scene opened successfully');
+                        resolve({ success: true, message: `Scene opened: ${scenePath}` });
+                    }, 500);
+                });
+                return;
+            }
+
+            // Method 3: Fallback - try to find scene using queryAssets
+            logger.info('[scene-tools] Trying queryAssets as fallback...');
+            if (typeof assetdb.queryAssets === 'function') {
+                assetdb.queryAssets('db://assets/**/*.fire', ['scene'], (err: Error | null, results: any[]) => {
+                    if (err) {
+                        logger.error('[scene-tools] queryAssets failed:', err);
+                        resolve({ success: false, error: err.message });
+                        return;
+                    }
+
+                    logger.info('[scene-tools] queryAssets results:', results);
+
+                    // Find matching scene
+                    const scene = results.find((s: any) =>
+                        s.url === scenePath ||
+                        s.path === scenePath ||
+                        s.path?.endsWith(scenePath.replace('db://assets/', ''))
+                    );
+
+                    if (!scene) {
+                        logger.error('[scene-tools] Scene not found in queryAssets results');
+                        resolve({ success: false, error: 'Scene not found' });
+                        return;
+                    }
+
+                    logger.info('[scene-tools] Found scene:', scene);
+                    logger.info('[scene-tools] Opening scene with UUID via IPC...');
+                    editor.Ipc.sendToPanel('scene', 'scene:open-by-uuid', scene.uuid);
+
+                    setTimeout(() => {
+                        logger.info('[scene-tools] Scene opened successfully');
+                        resolve({ success: true, message: `Scene opened: ${scenePath}` });
+                    }, 500);
+                });
+                return;
+            }
+
+            logger.error('[scene-tools] No available method to query scene UUID');
+            resolve({ success: false, error: 'No available method to query scene UUID' });
         });
     }
 

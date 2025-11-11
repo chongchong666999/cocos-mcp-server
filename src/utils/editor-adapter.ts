@@ -1,3 +1,5 @@
+/// <reference path="../../@types/editor.d.ts" />
+
 export function ensureEditorAdapters() {
     const editor: any = Editor;
 

@@ -269,9 +269,9 @@ export class SceneTools implements ToolExecutor {
                 logger.info('[scene-tools] Got UUID via urlToUuid:', uuid);
 
                 if (uuid) {
-                    // In 2.4.x, open scene by sending 'assets:open' message to main process
-                    logger.info('[scene-tools] Opening scene with UUID via assets:open...');
-                    editor.Ipc.sendToMain('assets:open', uuid);
+                    // In 2.4.x, open scene by sending 'scene:open-by-uuid' message to main process
+                    logger.info('[scene-tools] Opening scene with UUID via scene:open-by-uuid...');
+                    editor.Ipc.sendToMain('scene:open-by-uuid', uuid);
 
                     // Wait a bit for the scene to open
                     setTimeout(() => {
@@ -295,8 +295,8 @@ export class SceneTools implements ToolExecutor {
                     }
 
                     logger.info('[scene-tools] Got UUID via queryUuidByUrl:', uuid);
-                    logger.info('[scene-tools] Opening scene with UUID via assets:open...');
-                    editor.Ipc.sendToMain('assets:open', uuid);
+                    logger.info('[scene-tools] Opening scene with UUID via scene:open-by-uuid...');
+                    editor.Ipc.sendToMain('scene:open-by-uuid', uuid);
 
                     setTimeout(() => {
                         logger.info('[scene-tools] Scene opened successfully');
@@ -332,8 +332,8 @@ export class SceneTools implements ToolExecutor {
                     }
 
                     logger.info('[scene-tools] Found scene:', scene);
-                    logger.info('[scene-tools] Opening scene with UUID via assets:open...');
-                    editor.Ipc.sendToMain('assets:open', scene.uuid);
+                    logger.info('[scene-tools] Opening scene with UUID via scene:open-by-uuid...');
+                    editor.Ipc.sendToMain('scene:open-by-uuid', scene.uuid);
 
                     setTimeout(() => {
                         logger.info('[scene-tools] Scene opened successfully');

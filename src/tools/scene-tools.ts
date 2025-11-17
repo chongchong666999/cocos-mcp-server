@@ -54,7 +54,7 @@ export class SceneTools implements ToolExecutor {
                         },
                         savePath: {
                             type: 'string',
-                            description: 'Path to save the scene (e.g., db://assets/scenes/NewScene.scene)'
+                            description: 'Path to save the scene (e.g., db://assets/Scene/NewScene.fire or db://assets/Scene)'
                         }
                     },
                     required: ['sceneName', 'savePath']
@@ -108,7 +108,7 @@ export class SceneTools implements ToolExecutor {
             case 'open_scene':
                 return await this.openScene(args.scenePath);
             case 'save_scene':
-                return await this.saveScene();
+                return await this.saveScene(args.scenePath);
             case 'create_scene':
                 return await this.createScene(args.sceneName, args.savePath);
             case 'save_scene_as':
@@ -348,207 +348,370 @@ export class SceneTools implements ToolExecutor {
         });
     }
 
-    private async saveScene(): Promise<ToolResponse> {
+    private async saveScene(scenePath?: string): Promise<ToolResponse> {
         return new Promise((resolve) => {
-            Editor.Message.request('scene', 'save-scene').then(() => {
-                resolve({ success: true, message: 'Scene saved successfully' });
-            }).catch((err: Error) => {
-                resolve({ success: false, error: err.message });
+            logger.info('[scene-tools] Saving scene:', scenePath || 'current scene');
+
+            // In 2.4.x, use scene panel's save-scene message
+            const editor: any = Editor;
+
+            // Try to send save-scene message to scene panel
+            editor.Ipc.sendToPanel('scene', 'scene:save-scene', (err: Error | null) => {
+                if (err) {
+                    logger.error('[scene-tools] Failed to save scene via panel:', err);
+                    resolve({ success: false, error: err.message });
+                } else {
+                    logger.info('[scene-tools] Scene saved successfully');
+                    resolve({ success: true, message: 'Scene saved successfully' });
+                }
             });
         });
     }
 
     private async createScene(sceneName: string, savePath: string): Promise<ToolResponse> {
         return new Promise((resolve) => {
-            // 确保路径以.scene结尾
-            const fullPath = savePath.endsWith('.scene') ? savePath : `${savePath}/${sceneName}.scene`;
-            
-            // 使用正确的Cocos Creator 3.8场景格式
-            const sceneContent = JSON.stringify([
-                {
-                    "__type__": "cc.SceneAsset",
-                    "_name": sceneName,
-                    "_objFlags": 0,
-                    "__editorExtras__": {},
-                    "_native": "",
-                    "scene": {
-                        "__id__": 1
-                    }
-                },
-                {
-                    "__type__": "cc.Scene",
-                    "_name": sceneName,
-                    "_objFlags": 0,
-                    "__editorExtras__": {},
-                    "_parent": null,
-                    "_children": [],
-                    "_active": true,
-                    "_components": [],
-                    "_prefab": null,
-                    "_lpos": {
-                        "__type__": "cc.Vec3",
-                        "x": 0,
-                        "y": 0,
-                        "z": 0
-                    },
-                    "_lrot": {
-                        "__type__": "cc.Quat",
-                        "x": 0,
-                        "y": 0,
-                        "z": 0,
-                        "w": 1
-                    },
-                    "_lscale": {
-                        "__type__": "cc.Vec3",
-                        "x": 1,
-                        "y": 1,
-                        "z": 1
-                    },
-                    "_mobility": 0,
-                    "_layer": 1073741824,
-                    "_euler": {
-                        "__type__": "cc.Vec3",
-                        "x": 0,
-                        "y": 0,
-                        "z": 0
-                    },
-                    "autoReleaseAssets": false,
-                    "_globals": {
-                        "__id__": 2
-                    },
-                    "_id": "scene"
-                },
-                {
-                    "__type__": "cc.SceneGlobals",
-                    "ambient": {
-                        "__id__": 3
-                    },
-                    "skybox": {
-                        "__id__": 4
-                    },
-                    "fog": {
-                        "__id__": 5
-                    },
-                    "octree": {
-                        "__id__": 6
-                    }
-                },
-                {
-                    "__type__": "cc.AmbientInfo",
-                    "_skyColorHDR": {
-                        "__type__": "cc.Vec4",
-                        "x": 0.2,
-                        "y": 0.5,
-                        "z": 0.8,
-                        "w": 0.520833
-                    },
-                    "_skyColor": {
-                        "__type__": "cc.Vec4",
-                        "x": 0.2,
-                        "y": 0.5,
-                        "z": 0.8,
-                        "w": 0.520833
-                    },
-                    "_skyIllumHDR": 20000,
-                    "_skyIllum": 20000,
-                    "_groundAlbedoHDR": {
-                        "__type__": "cc.Vec4",
-                        "x": 0.2,
-                        "y": 0.2,
-                        "z": 0.2,
-                        "w": 1
-                    },
-                    "_groundAlbedo": {
-                        "__type__": "cc.Vec4",
-                        "x": 0.2,
-                        "y": 0.2,
-                        "z": 0.2,
-                        "w": 1
-                    }
-                },
-                {
-                    "__type__": "cc.SkyboxInfo",
-                    "_envLightingType": 0,
-                    "_envmapHDR": null,
-                    "_envmap": null,
-                    "_envmapLodCount": 0,
-                    "_diffuseMapHDR": null,
-                    "_diffuseMap": null,
-                    "_enabled": false,
-                    "_useHDR": true,
-                    "_editableMaterial": null,
-                    "_reflectionHDR": null,
-                    "_reflectionMap": null,
-                    "_rotationAngle": 0
-                },
-                {
-                    "__type__": "cc.FogInfo",
-                    "_type": 0,
-                    "_fogColor": {
-                        "__type__": "cc.Color",
-                        "r": 200,
-                        "g": 200,
-                        "b": 200,
-                        "a": 255
-                    },
-                    "_enabled": false,
-                    "_fogDensity": 0.3,
-                    "_fogStart": 0.5,
-                    "_fogEnd": 300,
-                    "_fogAtten": 5,
-                    "_fogTop": 1.5,
-                    "_fogRange": 1.2,
-                    "_accurate": false
-                },
-                {
-                    "__type__": "cc.OctreeInfo",
-                    "_enabled": false,
-                    "_minPos": {
-                        "__type__": "cc.Vec3",
-                        "x": -1024,
-                        "y": -1024,
-                        "z": -1024
-                    },
-                    "_maxPos": {
-                        "__type__": "cc.Vec3",
-                        "x": 1024,
-                        "y": 1024,
-                        "z": 1024
-                    },
-                    "_depth": 8
-                }
-            ], null, 2);
-            
-            Editor.Message.request('asset-db', 'create-asset', fullPath, sceneContent).then((result: any) => {
-                // Verify scene creation by checking if it exists
-                this.getSceneList().then((sceneList) => {
-                    const createdScene = sceneList.data?.find((scene: any) => scene.uuid === result.uuid);
-                    resolve({
-                        success: true,
-                        data: {
-                            uuid: result.uuid,
-                            url: result.url,
-                            name: sceneName,
-                            message: `Scene '${sceneName}' created successfully`,
-                            sceneVerified: !!createdScene
-                        },
-                        verificationData: createdScene
+            try {
+                const targetPath = this.normalizeSceneSavePath(sceneName, savePath);
+                const sceneContent = this.buildCreator24SceneContent(sceneName);
+
+                this.sendSceneDataToAssetDB(targetPath, sceneContent).then((result: any) => {
+                    this.getSceneList().then((sceneList) => {
+                        const createdScene = sceneList.data?.find((scene: any) => {
+                            if (result?.uuid && scene.uuid) {
+                                return scene.uuid === result.uuid;
+                            }
+                            return scene.path === targetPath;
+                        });
+
+                        resolve({
+                            success: true,
+                            data: {
+                                uuid: result?.uuid,
+                                url: result?.url || targetPath,
+                                name: sceneName,
+                                message: `Scene '${sceneName}' created successfully`,
+                                sceneVerified: !!createdScene
+                            },
+                            verificationData: createdScene
+                        });
+                    }).catch(() => {
+                        resolve({
+                            success: true,
+                            data: {
+                                uuid: result?.uuid,
+                                url: result?.url || targetPath,
+                                name: sceneName,
+                                message: `Scene '${sceneName}' created successfully (verification failed)`
+                            }
+                        });
                     });
-                }).catch(() => {
-                    resolve({
-                        success: true,
-                        data: {
-                            uuid: result.uuid,
-                            url: result.url,
-                            name: sceneName,
-                            message: `Scene '${sceneName}' created successfully (verification failed)`
+                }).catch((err: Error) => {
+                    resolve({ success: false, error: err.message });
+                });
+            } catch (err: any) {
+                resolve({ success: false, error: err.message || String(err) });
+            }
+        });
+    }
+
+    private sanitizeSceneName(name: string): string {
+        const trimmed = (name || 'New Scene').trim();
+        const cleaned = trimmed.replace(/\.(fire|scene)$/i, '');
+        return cleaned || 'New Scene';
+    }
+
+    private normalizeSceneSavePath(sceneName: string, rawSavePath: string): string {
+        const sanitizedName = this.sanitizeSceneName(sceneName);
+        let normalized = (rawSavePath || '').trim();
+
+        if (!normalized) {
+            throw new Error('savePath is required to create a scene');
+        }
+
+        normalized = normalized.replace(/\\/g, '/');
+        const lower = normalized.toLowerCase();
+
+        if (lower.endsWith('.scene')) {
+            normalized = normalized.slice(0, -6) + '.fire';
+        } else if (!lower.endsWith('.fire')) {
+            const suffix = normalized.endsWith('/') ? '' : '/';
+            normalized = `${normalized}${suffix}${sanitizedName}.fire`;
+        }
+
+        return normalized;
+    }
+
+    private buildCreator24SceneContent(sceneName: string): string {
+        const sanitizedName = this.sanitizeSceneName(sceneName);
+        const sceneTemplate: any[] = [
+            {
+                __type__: 'cc.SceneAsset',
+                _name: sanitizedName,
+                _objFlags: 0,
+                _native: '',
+                scene: {
+                    __id__: 1
+                }
+            },
+            {
+                __type__: 'cc.Scene',
+                _objFlags: 0,
+                _parent: null,
+                _children: [
+                    {
+                        __id__: 2
+                    }
+                ],
+                _active: true,
+                _components: [],
+                _prefab: null,
+                _opacity: 255,
+                _color: {
+                    __type__: 'cc.Color',
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                    a: 255
+                },
+                _contentSize: {
+                    __type__: 'cc.Size',
+                    width: 0,
+                    height: 0
+                },
+                _anchorPoint: {
+                    __type__: 'cc.Vec2',
+                    x: 0,
+                    y: 0
+                },
+                _trs: {
+                    __type__: 'TypedArray',
+                    ctor: 'Float64Array',
+                    array: [0, 0, 0, 0, 0, 0, 1, 1, 1, 1]
+                },
+                _is3DNode: true,
+                _groupIndex: 0,
+                groupIndex: 0,
+                autoReleaseAssets: false,
+                _id: '324247e8-c584-495d-87b3-015a69fee444'
+            },
+            {
+                __type__: 'cc.Node',
+                _name: 'Canvas',
+                _objFlags: 0,
+                _parent: {
+                    __id__: 1
+                },
+                _children: [
+                    {
+                        __id__: 3
+                    }
+                ],
+                _active: true,
+                _components: [
+                    {
+                        __id__: 5
+                    },
+                    {
+                        __id__: 6
+                    }
+                ],
+                _prefab: null,
+                _opacity: 255,
+                _color: {
+                    __type__: 'cc.Color',
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                    a: 255
+                },
+                _contentSize: {
+                    __type__: 'cc.Size',
+                    width: 960,
+                    height: 640
+                },
+                _anchorPoint: {
+                    __type__: 'cc.Vec2',
+                    x: 0.5,
+                    y: 0.5
+                },
+                _trs: {
+                    __type__: 'TypedArray',
+                    ctor: 'Float64Array',
+                    array: [480, 320, 0, 0, 0, 0, 1, 1, 1, 1]
+                },
+                _eulerAngles: {
+                    __type__: 'cc.Vec3',
+                    x: 0,
+                    y: 0,
+                    z: 0
+                },
+                _skewX: 0,
+                _skewY: 0,
+                _is3DNode: false,
+                _groupIndex: 0,
+                groupIndex: 0,
+                _id: 'a5esZu+45LA5mBpvttspPD'
+            },
+            {
+                __type__: 'cc.Node',
+                _name: 'Main Camera',
+                _objFlags: 0,
+                _parent: {
+                    __id__: 2
+                },
+                _children: [],
+                _active: true,
+                _components: [
+                    {
+                        __id__: 4
+                    }
+                ],
+                _prefab: null,
+                _opacity: 255,
+                _color: {
+                    __type__: 'cc.Color',
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                    a: 255
+                },
+                _contentSize: {
+                    __type__: 'cc.Size',
+                    width: 960,
+                    height: 640
+                },
+                _anchorPoint: {
+                    __type__: 'cc.Vec2',
+                    x: 0.5,
+                    y: 0.5
+                },
+                _trs: {
+                    __type__: 'TypedArray',
+                    ctor: 'Float64Array',
+                    array: [0, 0, 0, 0, 0, 0, 1, 1, 1, 1]
+                },
+                _eulerAngles: {
+                    __type__: 'cc.Vec3',
+                    x: 0,
+                    y: 0,
+                    z: 0
+                },
+                _skewX: 0,
+                _skewY: 0,
+                _is3DNode: false,
+                _groupIndex: 0,
+                groupIndex: 0,
+                _id: 'e1WoFrQ79G7r4ZuQE3HlNb'
+            },
+            {
+                __type__: 'cc.Camera',
+                _name: '',
+                _objFlags: 0,
+                node: {
+                    __id__: 3
+                },
+                _enabled: true,
+                _cullingMask: 4294967295,
+                _clearFlags: 7,
+                _backgroundColor: {
+                    __type__: 'cc.Color',
+                    r: 0,
+                    g: 0,
+                    b: 0,
+                    a: 255
+                },
+                _depth: -1,
+                _zoomRatio: 1,
+                _targetTexture: null,
+                _fov: 60,
+                _orthoSize: 10,
+                _nearClip: 1,
+                _farClip: 4096,
+                _ortho: true,
+                _rect: {
+                    __type__: 'cc.Rect',
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1
+                },
+                _renderStages: 1,
+                _alignWithScreen: true,
+                _id: '81GN3uXINKVLeW4+iKSlim'
+            },
+            {
+                __type__: 'cc.Canvas',
+                _name: '',
+                _objFlags: 0,
+                node: {
+                    __id__: 2
+                },
+                _enabled: true,
+                _designResolution: {
+                    __type__: 'cc.Size',
+                    width: 960,
+                    height: 640
+                },
+                _fitWidth: false,
+                _fitHeight: true,
+                _id: '59Cd0ovbdF4byw5sbjJDx7'
+            },
+            {
+                __type__: 'cc.Widget',
+                _name: '',
+                _objFlags: 0,
+                node: {
+                    __id__: 2
+                },
+                _enabled: true,
+                alignMode: 1,
+                _target: null,
+                _alignFlags: 45,
+                _left: 0,
+                _right: 0,
+                _top: 0,
+                _bottom: 0,
+                _verticalCenter: 0,
+                _horizontalCenter: 0,
+                _isAbsLeft: true,
+                _isAbsRight: true,
+                _isAbsTop: true,
+                _isAbsBottom: true,
+                _isAbsHorizontalCenter: true,
+                _isAbsVerticalCenter: true,
+                _originalWidth: 0,
+                _originalHeight: 0,
+                _id: '29zXboiXFBKoIV4PQ2liTe'
+            }
+        ];
+
+        return JSON.stringify(sceneTemplate);
+    }
+
+    private sendSceneDataToAssetDB(targetPath: string, sceneContent: string): Promise<any> {
+        const editor: any = Editor;
+
+        if (editor?.Ipc?.sendToMain) {
+            return new Promise((resolve, reject) => {
+                try {
+                    editor.Ipc.sendToMain('asset-db:create-asset', targetPath, sceneContent, (err: Error | null, result: any) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(result);
                         }
                     });
-                });
-            }).catch((err: Error) => {
-                resolve({ success: false, error: err.message });
+                } catch (error) {
+                    reject(error);
+                }
             });
-        });
+        }
+
+        if (editor?.Message?.request) {
+            return Editor.Message.request('asset-db', 'create-asset', targetPath, sceneContent);
+        }
+
+        return Promise.reject(new Error('Asset database interface is not available'));
     }
 
     private async getSceneHierarchy(includeComponents: boolean = false): Promise<ToolResponse> {

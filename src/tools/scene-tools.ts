@@ -69,6 +69,10 @@ export class SceneTools implements ToolExecutor {
                         path: {
                             type: 'string',
                             description: 'Path to save the scene'
+                        },
+                        sourcePath: {
+                            type: 'string',
+                            description: 'Optional explicit path of the current scene'
                         }
                     },
                     required: ['path']
@@ -112,7 +116,7 @@ export class SceneTools implements ToolExecutor {
             case 'create_scene':
                 return await this.createScene(args.sceneName, args.savePath);
             case 'save_scene_as':
-                return await this.saveSceneAs(args.path);
+                return await this.saveSceneAs(args.path, args.sourcePath);
             case 'close_scene':
                 return await this.closeScene();
             case 'get_scene_hierarchy':
@@ -418,6 +422,131 @@ export class SceneTools implements ToolExecutor {
         const trimmed = (name || 'New Scene').trim();
         const cleaned = trimmed.replace(/\.(fire|scene)$/i, '');
         return cleaned || 'New Scene';
+    }
+
+    private ensureDbUrl(rawPath: string): string {
+        let normalized = (rawPath || '').trim();
+
+        if (!normalized) {
+            throw new Error('Scene path is required');
+        }
+
+        normalized = normalized.replace(/\\/g, '/');
+
+        if (normalized.startsWith('db://')) {
+            return normalized;
+        }
+
+        if (normalized.startsWith('assets/')) {
+            return `db://${normalized}`;
+        }
+
+        if (normalized.startsWith('/')) {
+            return `db://assets${normalized}`;
+        }
+
+        return `db://assets/${normalized}`;
+    }
+
+    private normalizeSceneSourcePath(rawPath: string): string {
+        let normalized = this.ensureDbUrl(rawPath);
+
+        if (normalized.endsWith('/')) {
+            normalized = normalized.slice(0, -1);
+        }
+
+        const lower = normalized.toLowerCase();
+        if (lower.endsWith('.scene')) {
+            return normalized.slice(0, -6) + '.fire';
+        }
+
+        if (!lower.endsWith('.fire')) {
+            return `${normalized}.fire`;
+        }
+
+        return normalized;
+    }
+
+    private extractSceneNameFromPath(scenePath: string): string {
+        if (!scenePath) {
+            return 'New Scene';
+        }
+
+        const normalized = scenePath.replace(/\\/g, '/');
+        const segments = normalized.split('/');
+        const last = segments[segments.length - 1] || '';
+        const withoutExt = last.replace(/\.(fire|scene)$/i, '');
+        return this.sanitizeSceneName(withoutExt || 'New Scene');
+    }
+
+    private async resolveCurrentSceneSource(sourceOverride?: string): Promise<{ path: string; name: string }> {
+        if (sourceOverride) {
+            const normalizedSource = this.normalizeSceneSourcePath(sourceOverride);
+            return {
+                path: normalizedSource,
+                name: this.extractSceneNameFromPath(normalizedSource)
+            };
+        }
+
+        let sceneInfo: any = null;
+        try {
+            sceneInfo = await Editor.Message.request('scene', 'query-current-scene');
+        } catch (err) {
+            logger.warn(`[scene-tools] Failed to query current scene info: ${err}`);
+        }
+
+        let rawPath = sceneInfo?.url || sceneInfo?.path || sceneInfo?.file;
+        let sceneName = sceneInfo?.name || sceneInfo?.sceneName;
+
+        if ((!rawPath || typeof rawPath !== 'string') && sceneInfo?.uuid) {
+            try {
+                const assetInfo = await Editor.Message.request('asset-db', 'query-asset-info', { uuid: sceneInfo.uuid });
+                if (assetInfo) {
+                    rawPath = assetInfo.url || assetInfo.path;
+                    sceneName = sceneName || assetInfo.name;
+                }
+            } catch (assetErr) {
+                logger.warn(`[scene-tools] Failed to query asset info for scene uuid ${sceneInfo.uuid}: ${assetErr}`);
+            }
+        }
+
+        if (!rawPath) {
+            throw new Error('Unable to determine current scene path. Please provide sourcePath explicitly.');
+        }
+
+        const normalizedSource = this.normalizeSceneSourcePath(rawPath);
+        return {
+            path: normalizedSource,
+            name: sceneName || this.extractSceneNameFromPath(normalizedSource)
+        };
+    }
+
+    private moveSceneAsset(source: string, target: string): Promise<any> {
+        return new Promise((resolve, reject) => {
+            const editor: any = Editor;
+
+            if (editor?.Ipc?.sendToMain) {
+                try {
+                    editor.Ipc.sendToMain('asset-db:move-asset', source, target, (err: Error | null, result: any) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(result);
+                        }
+                    });
+                } catch (error) {
+                    reject(error);
+                }
+                return;
+            }
+
+            if (Editor?.Message?.request) {
+                Editor.Message.request('asset-db', 'move-asset', source, target).then(resolve).catch(reject);
+                return;
+            }
+
+            reject(new Error('Asset database interface is not available'));
+        });
     }
 
     private normalizeSceneSavePath(sceneName: string, rawSavePath: string): string {
@@ -769,20 +898,38 @@ export class SceneTools implements ToolExecutor {
         return nodeInfo;
     }
 
-    private async saveSceneAs(path: string): Promise<ToolResponse> {
-        return new Promise((resolve) => {
-            // save-as-scene API 不接受路径参数，会弹出对话框让用户选择
-            (Editor.Message.request as any)('scene', 'save-as-scene').then(() => {
+    private async saveSceneAs(path: string, sourcePath?: string): Promise<ToolResponse> {
+        return new Promise(async (resolve) => {
+            try {
+                if (!path || typeof path !== 'string') {
+                    resolve({ success: false, error: 'path is required' });
+                    return;
+                }
+
+                const currentScene = await this.resolveCurrentSceneSource(sourcePath);
+                const targetPath = this.normalizeSceneSavePath(
+                    currentScene.name,
+                    this.ensureDbUrl(path)
+                );
+
+                if (targetPath === currentScene.path) {
+                    resolve({ success: false, error: 'Source and destination paths are identical' });
+                    return;
+                }
+
+                await this.moveSceneAsset(currentScene.path, targetPath);
+
                 resolve({
                     success: true,
                     data: {
-                        path: path,
-                        message: `Scene save-as dialog opened`
+                        source: currentScene.path,
+                        path: targetPath,
+                        message: `Scene moved to ${targetPath}`
                     }
                 });
-            }).catch((err: Error) => {
-                resolve({ success: false, error: err.message });
-            });
+            } catch (err: any) {
+                resolve({ success: false, error: err?.message || String(err) });
+            }
         });
     }
 

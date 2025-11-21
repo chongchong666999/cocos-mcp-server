@@ -1,4 +1,5 @@
 declare const cc: any;
+declare const Editor: any;
 
 function getCC(): any {
     if (typeof cc !== 'undefined') {
@@ -9,6 +10,22 @@ function getCC(): any {
         return require('cc');
     } catch (error) {
         throw new Error('无法获取 Cocos 引擎实例 (cc)');
+    }
+}
+
+/**
+ * 标记场景为已修改并保存
+ * 使用 scene:stash-and-save 是 Cocos Creator 2.4.13 中正确的保存 API
+ */
+function markSceneDirty(): void {
+    try {
+        if (typeof Editor !== 'undefined' && Editor.Ipc && Editor.Ipc.sendToPanel) {
+            // 使用 scene:stash-and-save 保存场景
+            // 这会暂存当前场景状态并保存到文件
+            Editor.Ipc.sendToPanel('scene', 'scene:stash-and-save');
+        }
+    } catch (error) {
+        console.warn('[scene-script] Failed to save scene:', error);
     }
 }
 
@@ -276,7 +293,7 @@ export const methods: { [key: string]: (...any: any) => any } = {
     /**
      * Create a new node
      */
-    createNode(name: string, parentUuid?: string) {
+    createNode(name: string, parentUuid: string | null) {
         try {
             const { director, Node } = getCC();
             const scene = director.getScene();
@@ -285,17 +302,16 @@ export const methods: { [key: string]: (...any: any) => any } = {
             }
 
             const node = new Node(name);
-            
-            if (parentUuid) {
-                const parent = scene.getChildByUuid(parentUuid);
-                if (parent) {
-                    parent.addChild(node);
-                } else {
-                    scene.addChild(node);
-                }
+            const parent = parentUuid ? scene.getChildByUuid(parentUuid) : scene;
+            if (parent) {
+                parent.addChild(node);
             } else {
+                // Fallback if parentUuid was provided but parent not found, add to scene root
                 scene.addChild(node);
             }
+
+            // 标记场景为已修改
+            markSceneDirty();
 
             return { 
                 success: true, 
@@ -640,6 +656,9 @@ export const methods: { [key: string]: (...any: any) => any } = {
             const nodeName = node.name;
             node.destroy();
             
+            // 标记场景为已修改
+            markSceneDirty();
+            
             return { 
                 success: true, 
                 message: `Node '${nodeName}' deleted successfully`,
@@ -677,6 +696,9 @@ export const methods: { [key: string]: (...any: any) => any } = {
             if (siblingIndex !== undefined && siblingIndex >= 0) {
                 node.setSiblingIndex(siblingIndex);
             }
+
+            // 标记场景为已修改
+            markSceneDirty();
 
             return { 
                 success: true, 
@@ -720,6 +742,9 @@ export const methods: { [key: string]: (...any: any) => any } = {
             } else {
                 scene.addChild(duplicate);
             }
+
+            // 标记场景为已修改
+            markSceneDirty();
 
             return { 
                 success: true, 
@@ -786,6 +811,9 @@ export const methods: { [key: string]: (...any: any) => any } = {
                 );
                 updates.push('scale');
             }
+
+            // 标记场景为已修改
+            markSceneDirty();
 
             return { 
                 success: true, 

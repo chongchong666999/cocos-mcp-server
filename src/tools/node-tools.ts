@@ -314,17 +314,15 @@ export class NodeTools implements ToolExecutor {
                 // 如果没有提供父节点UUID，获取场景根节点
                 if (!targetParentUuid) {
                     try {
-                        const sceneInfo = await Editor.Message.request('scene', 'query-node-tree');
-                        if (sceneInfo && typeof sceneInfo === 'object' && !Array.isArray(sceneInfo) && Object.prototype.hasOwnProperty.call(sceneInfo, 'uuid')) {
-                            targetParentUuid = (sceneInfo as any).uuid;
-                            console.log(`No parent specified, using scene root: ${targetParentUuid}`);
-                        } else if (Array.isArray(sceneInfo) && sceneInfo.length > 0 && sceneInfo[0].uuid) {
-                            targetParentUuid = sceneInfo[0].uuid;
+                        const sceneInfo = await this.requestSceneTreeData();
+                        const rootCandidate = Array.isArray(sceneInfo) ? sceneInfo[0] : sceneInfo;
+                        if (rootCandidate && rootCandidate.uuid) {
+                            targetParentUuid = rootCandidate.uuid;
                             console.log(`No parent specified, using scene root: ${targetParentUuid}`);
                         } else {
-                            const currentScene = await Editor.Message.request('scene', 'query-current-scene');
-                            if (currentScene && currentScene.uuid) {
-                                targetParentUuid = currentScene.uuid;
+                            const currentScene = await this.callSceneScript('getCurrentSceneInfo');
+                            if (currentScene?.data?.uuid) {
+                                targetParentUuid = currentScene.data.uuid;
                             }
                         }
                     } catch (err) {
@@ -336,17 +334,15 @@ export class NodeTools implements ToolExecutor {
                 let finalAssetUuid = args.assetUuid;
                 if (args.assetPath && !finalAssetUuid) {
                     try {
-                        const assetInfo = await Editor.Message.request('asset-db', 'query-asset-info', args.assetPath);
-                        if (assetInfo && assetInfo.uuid) {
-                            finalAssetUuid = assetInfo.uuid;
-                            console.log(`Asset path '${args.assetPath}' resolved to UUID: ${finalAssetUuid}`);
-                        } else {
+                        finalAssetUuid = await this.resolveAssetUuid(args.assetPath);
+                        if (!finalAssetUuid) {
                             resolve({
                                 success: false,
                                 error: `Asset not found at path: ${args.assetPath}`
                             });
                             return;
                         }
+                        console.log(`Asset path '${args.assetPath}' resolved to UUID: ${finalAssetUuid}`);
                     } catch (err) {
                         resolve({
                             success: false,
@@ -387,22 +383,38 @@ export class NodeTools implements ToolExecutor {
                     createNodeOptions.keepWorldTransform = true;
                 }
 
+                // 优先尝试使用 2.x 场景面板指令
+                let uuid: string | null = null;
+                try {
+                    const panelResult = await this.createNodeUsingPanelAPI({
+                        name: args.name,
+                        parent: targetParentUuid,
+                        nodeType: args.nodeType || 'Node',
+                        assetUuid: finalAssetUuid,
+                        components: args.components,
+                        keepWorldTransform: !!args.keepWorldTransform,
+                        unlinkPrefab: !!args.unlinkPrefab
+                    });
+                    uuid = this.extractUuidFromPanelResult(panelResult);
+                } catch (panelErr) {
+                    console.warn('[node-tools] 2.x create-node API failed, fallback to main process:', panelErr);
+                }
+
                 // 不使用dump参数处理初始变换，创建后使用set_node_transform设置
 
                 console.log('Creating node with options:', createNodeOptions);
 
-                // 创建节点
-                const nodeUuid = await Editor.Message.request('scene', 'create-node', createNodeOptions);
-                const uuid = Array.isArray(nodeUuid) ? nodeUuid[0] : nodeUuid;
+                if (!uuid) {
+                    throw new Error('Failed to determine new node UUID');
+                }
 
                 // 处理兄弟索引
-                if (args.siblingIndex !== undefined && args.siblingIndex >= 0 && uuid && targetParentUuid) {
+                if (args.siblingIndex !== undefined && args.siblingIndex >= 0 && targetParentUuid) {
                     try {
                         await new Promise(resolve => setTimeout(resolve, 100)); // 等待内部状态更新
-                        await Editor.Message.request('scene', 'set-parent', {
-                            parent: targetParentUuid,
-                            uuids: [uuid],
-                            keepWorldTransform: args.keepWorldTransform || false
+                        await this.reparentNodes([uuid], targetParentUuid, {
+                            keepWorldTransform: args.keepWorldTransform || false,
+                            siblingIndex: args.siblingIndex
                         });
                     } catch (err) {
                         console.warn('Failed to set sibling index:', err);
@@ -499,7 +511,7 @@ export class NodeTools implements ToolExecutor {
 
     private async getNodeInfo(uuid: string): Promise<ToolResponse> {
         return new Promise((resolve) => {
-            Editor.Message.request('scene', 'query-node', uuid).then((nodeData: any) => {
+            this.fetchNodeDump(uuid).then((nodeData: any) => {
                 if (!nodeData) {
                     resolve({
                         success: false,
@@ -511,52 +523,57 @@ export class NodeTools implements ToolExecutor {
                 // 根据实际返回的数据结构解析节点信息
                 const info: NodeInfo = {
                     uuid: nodeData.uuid?.value || uuid,
-                    name: nodeData.name?.value || 'Unknown',
+                    name: nodeData.name?.value || nodeData.name || 'Unknown',
                     active: nodeData.active?.value !== undefined ? nodeData.active.value : true,
                     position: nodeData.position?.value || { x: 0, y: 0, z: 0 },
                     rotation: nodeData.rotation?.value || { x: 0, y: 0, z: 0 },
                     scale: nodeData.scale?.value || { x: 1, y: 1, z: 1 },
                     parent: nodeData.parent?.value?.uuid || null,
                     children: nodeData.children || [],
-                    components: (nodeData.__comps__ || []).map((comp: any) => ({
-                        type: comp.__type__ || 'Unknown',
+                    components: (nodeData.__comps__ || nodeData.components || []).map((comp: any) => ({
+                        type: comp.__type__ || comp.type || 'Unknown',
                         enabled: comp.enabled !== undefined ? comp.enabled : true
                     })),
                     layer: nodeData.layer?.value || 1073741824,
                     mobility: nodeData.mobility?.value || 0
                 };
                 resolve({ success: true, data: info });
-            }).catch((err: Error) => {
-                resolve({ success: false, error: err.message });
+            }).catch(async (err: Error) => {
+                console.warn('[node-tools] getNodeInfo direct query failed, fallback to scene script:', err);
+                try {
+                    const scriptResult = await this.callSceneScript('getNodeInfo', [uuid]);
+                    resolve(scriptResult);
+                } catch (err2: any) {
+                    resolve({ success: false, error: err2.message || err2 });
+                }
             });
         });
     }
 
     private async findNodes(pattern: string, exactMatch: boolean = false): Promise<ToolResponse> {
         return new Promise((resolve) => {
-            // Note: 'query-nodes-by-name' API doesn't exist in official documentation
-            // Using tree traversal as primary approach
-            Editor.Message.request('scene', 'query-node-tree').then((tree: any) => {
+            this.requestSceneTreeData().then((tree: any) => {
                 const nodes: any[] = [];
                 
-                const searchTree = (node: any, currentPath: string = '') => {
-                    const nodePath = currentPath ? `${currentPath}/${node.name}` : node.name;
+                const searchTree = (node: any, parentPath: string = '') => {
+                    const nodeName = node.name || 'Unknown';
+                    const currentPath = parentPath ? `${parentPath}/${nodeName}` : nodeName;
                     
                     const matches = exactMatch ? 
-                        node.name === pattern : 
-                        node.name.toLowerCase().includes(pattern.toLowerCase());
+                        nodeName === pattern : 
+                        nodeName.toLowerCase().includes(pattern.toLowerCase());
                     
                     if (matches) {
                         nodes.push({
                             uuid: node.uuid,
-                            name: node.name,
-                            path: nodePath
+                            name: nodeName,
+                            path: currentPath
                         });
                     }
                     
-                    if (node.children) {
+                    if (node.children && Array.isArray(node.children)) {
                         for (const child of node.children) {
-                            searchTree(child, nodePath);
+                            searchTree(child, currentPath);
                         }
                     }
                 };
@@ -567,52 +584,52 @@ export class NodeTools implements ToolExecutor {
                 
                 resolve({ success: true, data: nodes });
             }).catch((err: Error) => {
-                // 备用方案：使用场景脚本
-                const options = {
-                    name: 'cocos-mcp-server',
-                    method: 'findNodes',
-                    args: [pattern, exactMatch]
-                };
-                
-                Editor.Message.request('scene', 'execute-scene-script', options).then((result: any) => {
-                    resolve(result);
-                }).catch((err2: Error) => {
-                    resolve({ success: false, error: `Tree search failed: ${err.message}, Scene script failed: ${err2.message}` });
-                });
+                resolve({ success: false, error: err.message });
             });
         });
     }
 
     private async findNodeByName(name: string): Promise<ToolResponse> {
         return new Promise((resolve) => {
-            // 优先尝试使用 Editor API 查询节点树并搜索
-            Editor.Message.request('scene', 'query-node-tree').then((tree: any) => {
-                const foundNode = this.searchNodeInTree(tree, name);
-                if (foundNode) {
+            this.requestSceneTreeData().then((tree: any) => {
+                let foundNodeData: { uuid: string; name: string; path: string } | null = null;
+                
+                const searchTree = (node: any, parentPath: string = ''): boolean => {
+                    const nodeName = node.name || 'Unknown';
+                    const currentPath = parentPath ? `${parentPath}/${nodeName}` : nodeName;
+                    
+                    if (nodeName === name) {
+                        foundNodeData = {
+                            uuid: node.uuid,
+                            name: nodeName,
+                            path: currentPath
+                        };
+                        return true;
+                    }
+                    
+                    if (node.children && Array.isArray(node.children)) {
+                        for (const child of node.children) {
+                            if (searchTree(child, currentPath)) {
+                                return true;
+                            }
+                        }
+                    }
+                    
+                    return false;
+                };
+                
+                searchTree(tree);
+                
+                if (foundNodeData) {
                     resolve({
                         success: true,
-                        data: {
-                            uuid: foundNode.uuid,
-                            name: foundNode.name,
-                            path: this.getNodePath(foundNode)
-                        }
+                        data: foundNodeData
                     });
                 } else {
                     resolve({ success: false, error: `Node '${name}' not found` });
                 }
             }).catch((err: Error) => {
-                // 备用方案：使用场景脚本
-                const options = {
-                    name: 'cocos-mcp-server',
-                    method: 'findNodeByName',
-                    args: [name]
-                };
-                
-                Editor.Message.request('scene', 'execute-scene-script', options).then((result: any) => {
-                    resolve(result);
-                }).catch((err2: Error) => {
-                    resolve({ success: false, error: `Direct API failed: ${err.message}, Scene script failed: ${err2.message}` });
-                });
+                resolve({ success: false, error: err.message });
             });
         });
     }
@@ -636,27 +653,30 @@ export class NodeTools implements ToolExecutor {
 
     private async getAllNodes(): Promise<ToolResponse> {
         return new Promise((resolve) => {
-            // 尝试查询场景节点树
-            Editor.Message.request('scene', 'query-node-tree').then((tree: any) => {
+            this.requestSceneTreeData().then((tree: any) => {
                 const nodes: any[] = [];
                 
-                const traverseTree = (node: any) => {
+                const traverseTree = (node: any, parentPath: string = '') => {
+                    // 构建当前节点的路径
+                    const nodeName = node.name || 'Unknown';
+                    const currentPath = parentPath ? `${parentPath}/${nodeName}` : nodeName;
+                    
                     nodes.push({
                         uuid: node.uuid,
-                        name: node.name,
+                        name: nodeName,
                         type: node.type,
                         active: node.active,
-                        path: this.getNodePath(node)
+                        path: currentPath
                     });
                     
-                    if (node.children) {
+                    if (node.children && Array.isArray(node.children)) {
                         for (const child of node.children) {
-                            traverseTree(child);
+                            traverseTree(child, currentPath);
                         }
                     }
                 };
                 
-                if (tree && tree.children) {
+                if (tree) {
                     traverseTree(tree);
                 }
                 
@@ -668,26 +688,19 @@ export class NodeTools implements ToolExecutor {
                     }
                 });
             }).catch((err: Error) => {
-                // 备用方案：使用场景脚本
-                const options = {
-                    name: 'cocos-mcp-server',
-                    method: 'getAllNodes',
-                    args: []
-                };
-                
-                Editor.Message.request('scene', 'execute-scene-script', options).then((result: any) => {
-                    resolve(result);
-                }).catch((err2: Error) => {
-                    resolve({ success: false, error: `Direct API failed: ${err.message}, Scene script failed: ${err2.message}` });
-                });
+                resolve({ success: false, error: err.message });
             });
         });
     }
 
     private getNodePath(node: any): string {
+        // 这个方法保留用于其他地方，但不再用于 getAllNodes
+        if (!node || !node.name) {
+            return '';
+        }
         const path = [node.name];
         let current = node.parent;
-        while (current && current.name !== 'Canvas') {
+        while (current && typeof current === 'object' && current.name && current.name !== 'Canvas') {
             path.unshift(current.name);
             current = current.parent;
         }
@@ -696,14 +709,7 @@ export class NodeTools implements ToolExecutor {
 
     private async setNodeProperty(uuid: string, property: string, value: any): Promise<ToolResponse> {
         return new Promise((resolve) => {
-            // 尝试直接使用 Editor API 设置节点属性
-            Editor.Message.request('scene', 'set-property', {
-                uuid: uuid,
-                path: property,
-                dump: {
-                    value: value
-                }
-            }).then(() => {
+            this.updateNodePropertyViaScene(uuid, property, value).then(() => {
                 // Get comprehensive verification data including updated node info
                 this.getNodeInfo(uuid).then((nodeInfo) => {
                     resolve({
@@ -730,18 +736,7 @@ export class NodeTools implements ToolExecutor {
                     });
                 });
             }).catch((err: Error) => {
-                // 如果直接设置失败，尝试使用场景脚本
-                const options = {
-                    name: 'cocos-mcp-server',
-                    method: 'setNodeProperty',
-                    args: [uuid, property, value]
-                };
-                
-                Editor.Message.request('scene', 'execute-scene-script', options).then((result: any) => {
-                    resolve(result);
-                }).catch((err2: Error) => {
-                    resolve({ success: false, error: `Direct API failed: ${err.message}, Scene script failed: ${err2.message}` });
-                });
+                resolve({ success: false, error: err.message });
             });
         });
     }
@@ -771,11 +766,7 @@ export class NodeTools implements ToolExecutor {
                     }
                     
                     updatePromises.push(
-                        Editor.Message.request('scene', 'set-property', {
-                            uuid: uuid,
-                            path: 'position',
-                            dump: { value: normalizedPosition.value }
-                        })
+                        this.updateNodePropertyViaScene(uuid, 'position', normalizedPosition.value)
                     );
                     updates.push('position');
                 }
@@ -787,11 +778,7 @@ export class NodeTools implements ToolExecutor {
                     }
                     
                     updatePromises.push(
-                        Editor.Message.request('scene', 'set-property', {
-                            uuid: uuid,
-                            path: 'rotation',
-                            dump: { value: normalizedRotation.value }
-                        })
+                        this.updateNodePropertyViaScene(uuid, 'rotation', normalizedRotation.value)
                     );
                     updates.push('rotation');
                 }
@@ -803,11 +790,7 @@ export class NodeTools implements ToolExecutor {
                     }
                     
                     updatePromises.push(
-                        Editor.Message.request('scene', 'set-property', {
-                            uuid: uuid,
-                            path: 'scale',
-                            dump: { value: normalizedScale.value }
-                        })
+                        this.updateNodePropertyViaScene(uuid, 'scale', normalizedScale.value)
                     );
                     updates.push('scale');
                 }
@@ -957,7 +940,7 @@ export class NodeTools implements ToolExecutor {
 
     private async deleteNode(uuid: string): Promise<ToolResponse> {
         return new Promise((resolve) => {
-            Editor.Message.request('scene', 'remove-node', { uuid: uuid }).then(() => {
+            this.deleteNodes([uuid]).then(() => {
                 resolve({
                     success: true,
                     message: 'Node deleted successfully'
@@ -970,11 +953,9 @@ export class NodeTools implements ToolExecutor {
 
     private async moveNode(nodeUuid: string, newParentUuid: string, siblingIndex: number = -1): Promise<ToolResponse> {
         return new Promise((resolve) => {
-            // Use correct set-parent API instead of move-node
-            Editor.Message.request('scene', 'set-parent', {
-                parent: newParentUuid,
-                uuids: [nodeUuid],
-                keepWorldTransform: false
+            this.reparentNodes([nodeUuid], newParentUuid, {
+                keepWorldTransform: false,
+                siblingIndex: siblingIndex >= 0 ? siblingIndex : undefined
             }).then(() => {
                 resolve({
                     success: true,
@@ -988,12 +969,12 @@ export class NodeTools implements ToolExecutor {
 
     private async duplicateNode(uuid: string, includeChildren: boolean = true): Promise<ToolResponse> {
         return new Promise((resolve) => {
-            // Note: includeChildren parameter is accepted for future use but not currently implemented
-            Editor.Message.request('scene', 'duplicate-node', uuid).then((result: any) => {
+            this.duplicateNodes([uuid], includeChildren).then((result: any) => {
+                const duplicatedUuid = this.extractUuidFromPanelResult(result);
                 resolve({
                     success: true,
                     data: {
-                        newUuid: result.uuid,
+                        newUuid: duplicatedUuid,
                         message: 'Node duplicated successfully'
                     }
                 });
@@ -1110,5 +1091,281 @@ export class NodeTools implements ToolExecutor {
         }
         
         return 'generic';
+    }
+
+    private async requestSceneTreeData(): Promise<any> {
+        const errors: string[] = [];
+
+        // 优先使用场景脚本，因为 scene:query-hierarchy 只返回 UUID 字符串
+        try {
+            const treeData = await this.callSceneScript('getSceneTreeData');
+            if (treeData) {
+                return treeData;
+            }
+        } catch (err: any) {
+            errors.push(`scene-script:${err?.message || err}`);
+        }
+
+        // 备用：尝试面板 API（虽然它返回的格式不对）
+        try {
+            const hierarchy = await this.sendToScenePanel('scene:query-hierarchy');
+            if (hierarchy && typeof hierarchy === 'object' && hierarchy.uuid) {
+                // 如果返回的是对象且有 uuid，可能是正确的树结构
+                return hierarchy;
+            }
+        } catch (err: any) {
+            errors.push(`panel:${err?.message || err}`);
+        }
+
+        throw new Error(errors.join(' | ') || 'Failed to query scene tree');
+    }
+
+    private async fetchNodeDump(uuid: string): Promise<any> {
+        try {
+            const result = await this.sendToScenePanel('scene:query-node', uuid);
+            if (result) {
+                return result;
+            }
+        } catch (err) {
+            console.warn('[node-tools] scene:query-node panel fallback:', err);
+        }
+
+        return await this.callSceneScript('getNodeInfo', [uuid]);
+    }
+
+    private async createNodeUsingPanelAPI(options: {
+        name: string;
+        parent?: string | null;
+        nodeType: string;
+        assetUuid?: string | null;
+        components?: string[];
+        keepWorldTransform?: boolean;
+        unlinkPrefab?: boolean;
+    }): Promise<any> {
+        const parentUuid = options.parent || '';
+        if (options.assetUuid) {
+            return await this.sendToScenePanel(
+                'scene:create-nodes-by-uuids',
+                [options.assetUuid],
+                parentUuid,
+                {
+                    unlinkPrefab: options.unlinkPrefab ? true : null,
+                    keepWorldTransform: !!options.keepWorldTransform
+                }
+            );
+        }
+
+        const classId = this.mapNodeTypeToClassId(options.nodeType);
+        const payload = {
+            name: options.name,
+            components: options.components || [],
+            keepWorldTransform: !!options.keepWorldTransform
+        };
+
+        return await this.sendToScenePanel('scene:create-node-by-classid', classId, payload, parentUuid);
+    }
+
+    private mapNodeTypeToClassId(nodeType: string): string {
+        if (!nodeType) {
+            return 'cc.Node';
+        }
+
+        switch (nodeType) {
+            case '2DNode':
+            case '3DNode':
+            case 'Node':
+            default:
+                return 'cc.Node';
+        }
+    }
+
+    private extractUuidFromPanelResult(result: any): string | null {
+        if (!result) {
+            return null;
+        }
+
+        if (typeof result === 'string') {
+            return result;
+        }
+
+        if (Array.isArray(result) && result.length > 0) {
+            const first = result[0];
+            if (typeof first === 'string') {
+                return first;
+            }
+            if (first && typeof first === 'object') {
+                return first.uuid || first.id || null;
+            }
+        }
+
+        if (typeof result === 'object') {
+            if (result.uuid) {
+                return result.uuid;
+            }
+            if (result.id) {
+                return result.id;
+            }
+        }
+
+        return null;
+    }
+
+    private async sendToScenePanel(message: string, ...args: any[]): Promise<any> {
+        const editor: any = Editor;
+        if (!editor?.Ipc?.sendToPanel) {
+            throw new Error('Editor.Ipc.sendToPanel 不可用');
+        }
+
+        return new Promise((resolve, reject) => {
+            const callback = (err: Error | null, result: any) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(result);
+                }
+            };
+
+            try {
+                editor.Ipc.sendToPanel('scene', message, ...args, callback);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    private async reparentNodes(
+        uuids: string[],
+        parentUuid: string,
+        options: { keepWorldTransform?: boolean; siblingIndex?: number } = {}
+    ): Promise<void> {
+        await this.sendToScenePanel('scene:move-nodes', uuids, parentUuid, {
+            keepWorldTransform: !!options.keepWorldTransform,
+            siblingIndex: options.siblingIndex ?? -1
+        });
+    }
+
+    private async deleteNodes(uuids: string[]): Promise<void> {
+        await this.sendToScenePanel('scene:delete-nodes', uuids);
+    }
+
+    private async duplicateNodes(uuids: string[], includeChildren: boolean = true): Promise<any> {
+        return await this.sendToScenePanel('scene:duplicate-nodes', uuids, { includeChildren });
+    }
+
+    private async updateNodePropertyViaScene(uuid: string, property: string, value: any): Promise<void> {
+        const panelPayload = {
+            id: uuid,
+            path: property,
+            type: this.inferScenePropertyType(value),
+            value,
+            isSubProp: false
+        };
+
+        try {
+            await this.sendToScenePanel('scene:set-property', panelPayload);
+            return;
+        } catch (err) {
+            console.warn('[node-tools] scene:set-property panel fallback:', err);
+        }
+
+        await this.callSceneScript('setNodeProperty', [uuid, property, value]);
+    }
+
+    private inferScenePropertyType(value: any): string {
+        const valueType = typeof value;
+        if (valueType === 'string') {
+            return 'String';
+        }
+        if (valueType === 'boolean') {
+            return 'Boolean';
+        }
+        if (valueType === 'number') {
+            return 'Float';
+        }
+        if (value && typeof value === 'object') {
+            if (value.x !== undefined && value.y !== undefined) {
+                return 'Vec';
+            }
+            return 'Object';
+        }
+        return 'Unknown';
+    }
+
+    private async resolveAssetUuid(assetPath: string): Promise<string | null> {
+        const assetdb = this.getAssetDB();
+        if (!assetdb) {
+            throw new Error('Editor.assetdb 不可用');
+        }
+
+        if (typeof assetdb.urlToUuid === 'function') {
+            const uuid = assetdb.urlToUuid(assetPath);
+            if (uuid) {
+                return uuid;
+            }
+        }
+
+        if (typeof assetdb.queryUuidByUrl === 'function') {
+            return new Promise((resolve, reject) => {
+                assetdb.queryUuidByUrl(assetPath, (err: Error | null, uuid: string) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                    resolve(uuid || null);
+                });
+            });
+        }
+
+        if (typeof assetdb.queryAssets === 'function') {
+            return new Promise((resolve, reject) => {
+                assetdb.queryAssets(assetPath, ['asset'], (err: Error | null, results: any[]) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                    const match = Array.isArray(results) && results.length > 0 ? results[0] : null;
+                    resolve(match?.uuid || match?.fileId || null);
+                });
+            });
+        }
+
+        return null;
+    }
+
+    private getAssetDB(): any {
+        const editor: any = Editor;
+        return editor?.assetdb || editor?.remote?.assetdb;
+    }
+
+    private async callSceneScript(method: string, args: any[] = []): Promise<any> {
+        const options = {
+            name: 'cocos-mcp-server',
+            method,
+            args
+        };
+        const editor: any = Editor;
+        return new Promise((resolve, reject) => {
+            if (!editor?.Scene?.callSceneScript) {
+                reject(new Error('Editor.Scene.callSceneScript 不可用'));
+                return;
+            }
+
+            try {
+                editor.Scene.callSceneScript(
+                    options.name,
+                    options.method,
+                    ...options.args,
+                    (err: Error | null, result: any) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(result);
+                        }
+                    }
+                );
+            } catch (error) {
+                reject(error);
+            }
+        });
     }
 }

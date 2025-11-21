@@ -127,66 +127,57 @@ export class SceneTools implements ToolExecutor {
     }
 
     private async getCurrentScene(): Promise<ToolResponse> {
-        return new Promise((resolve) => {
-            // 直接使用 query-node-tree 来获取场景信息（这个方法已经验证可用）
-            Editor.Message.request('scene', 'query-node-tree').then((tree: any) => {
-                if (tree && tree.uuid) {
-                    resolve({
-                        success: true,
-                        data: {
-                            name: tree.name || 'Current Scene',
-                            uuid: tree.uuid,
-                            type: tree.type || 'cc.Scene',
-                            active: tree.active !== undefined ? tree.active : true,
-                            nodeCount: tree.children ? tree.children.length : 0
-                        }
-                    });
-                } else {
-                    resolve({ success: false, error: 'No scene data available' });
-                }
-            }).catch((err: Error) => {
-                // 备用方案：使用场景脚本
-                const options = {
-                    name: 'cocos-mcp-server',
-                    method: 'getCurrentSceneInfo',
-                    args: []
+        try {
+            const tree = await this.requestSceneTreeData();
+            const root = Array.isArray(tree) ? tree[0] : tree;
+
+            if (root && root.uuid) {
+                return {
+                    success: true,
+                    data: {
+                        name: root.name || 'Current Scene',
+                        uuid: root.uuid,
+                        type: root.type || 'cc.Scene',
+                        active: root.active !== undefined ? root.active : true,
+                        nodeCount: root.children ? root.children.length : 0
+                    }
                 };
-                
-                Editor.Message.request('scene', 'execute-scene-script', options).then((result: any) => {
-                    resolve(result);
-                }).catch((err2: Error) => {
-                    resolve({ success: false, error: `Direct API failed: ${err.message}, Scene script failed: ${err2.message}` });
-                });
-            });
-        });
+            }
+        } catch (err: any) {
+            logger.warn(`[scene-tools] requestSceneTreeData failed: ${err?.message || err}`);
+        }
+
+        try {
+            const result = await this.callSceneScript('getCurrentSceneInfo');
+            return result;
+        } catch (err: any) {
+            return {
+                success: false,
+                error: err?.message || String(err)
+            };
+        }
     }
 
     private async getSceneList(): Promise<ToolResponse> {
         const patterns = ['db://assets/**/*.scene', 'db://assets/**/*.fire'];
         const errors: string[] = [];
+        const assetdb = this.getAssetDB();
+
+        if (!assetdb) {
+            return {
+                success: false,
+                error: 'Asset database not available'
+            };
+        }
 
         for (const pattern of patterns) {
             try {
-                const results = await this.queryScenesViaMessage(pattern);
+                const results = await this.queryScenesViaAssetDB(assetdb, pattern);
                 if (results) {
                     const scenes = this.normalizeSceneResults(results);
                     if (scenes.length > 0) {
                         return { success: true, data: scenes };
                     }
-                    continue;
-                }
-            } catch (err: any) {
-                errors.push(`[Message:${pattern}] ${err?.message || err}`);
-            }
-
-            try {
-                const fallbackResults = await this.queryScenesViaAssetDB(pattern);
-                if (fallbackResults) {
-                    const scenes = this.normalizeSceneResults(fallbackResults);
-                    if (scenes.length > 0) {
-                        return { success: true, data: scenes };
-                    }
-                    continue;
                 }
             } catch (err: any) {
                 errors.push(`[AssetDB:${pattern}] ${err?.message || err}`);
@@ -207,17 +198,7 @@ export class SceneTools implements ToolExecutor {
         };
     }
 
-    private async queryScenesViaMessage(pattern: string): Promise<any[] | null> {
-        if (!Editor.Message || !Editor.Message.request) {
-            return null;
-        }
-
-        const results = await Editor.Message.request('asset-db', 'query-assets', { pattern });
-        return Array.isArray(results) ? results : [];
-    }
-
-    private async queryScenesViaAssetDB(pattern: string): Promise<any[] | null> {
-        const assetdb = (Editor as any)?.assetdb;
+    private async queryScenesViaAssetDB(assetdb: any, pattern: string): Promise<any[] | null> {
         if (!assetdb || typeof assetdb.queryAssets !== 'function') {
             return null;
         }
@@ -488,25 +469,43 @@ export class SceneTools implements ToolExecutor {
             };
         }
 
-        let sceneInfo: any = null;
-        try {
-            sceneInfo = await Editor.Message.request('scene', 'query-current-scene');
-        } catch (err) {
-            logger.warn(`[scene-tools] Failed to query current scene info: ${err}`);
+        const assetdb = this.getAssetDB();
+        if (!assetdb) {
+            throw new Error('Asset database not available');
         }
 
-        let rawPath = sceneInfo?.url || sceneInfo?.path || sceneInfo?.file;
-        let sceneName = sceneInfo?.name || sceneInfo?.sceneName;
+        let sceneInfo: any = null;
+        try {
+            sceneInfo = await this.callSceneScript('getCurrentSceneInfo');
+        } catch (err) {
+            logger.warn(`[scene-tools] Failed to query current scene info via script: ${err}`);
+        }
 
-        if ((!rawPath || typeof rawPath !== 'string') && sceneInfo?.uuid) {
+        const sceneData = sceneInfo?.data || sceneInfo;
+        const sceneUuid = sceneData?.uuid;
+        let sceneName = sceneData?.name;
+
+        if (!sceneUuid) {
+            throw new Error('Unable to determine current scene UUID. Please provide sourcePath explicitly.');
+        }
+
+        let rawPath: string | null = null;
+
+        if (typeof assetdb.uuidToUrl === 'function') {
             try {
-                const assetInfo = await Editor.Message.request('asset-db', 'query-asset-info', { uuid: sceneInfo.uuid });
-                if (assetInfo) {
-                    rawPath = assetInfo.url || assetInfo.path;
-                    sceneName = sceneName || assetInfo.name;
-                }
+                rawPath = assetdb.uuidToUrl(sceneUuid);
+            } catch (err) {
+                logger.warn(`[scene-tools] uuidToUrl failed for ${sceneUuid}: ${err}`);
+            }
+        }
+
+        if (!rawPath && typeof assetdb.queryInfoByUuid === 'function') {
+            try {
+                const info = await this.queryAssetInfoByUuid(assetdb, sceneUuid);
+                rawPath = info?.url || info?.path || rawPath;
+                sceneName = sceneName || info?.name;
             } catch (assetErr) {
-                logger.warn(`[scene-tools] Failed to query asset info for scene uuid ${sceneInfo.uuid}: ${assetErr}`);
+                logger.warn(`[scene-tools] Failed to query asset info for scene uuid ${sceneUuid}: ${assetErr}`);
             }
         }
 
@@ -537,11 +536,6 @@ export class SceneTools implements ToolExecutor {
                 } catch (error) {
                     reject(error);
                 }
-                return;
-            }
-
-            if (Editor?.Message?.request) {
-                Editor.Message.request('asset-db', 'move-asset', source, target).then(resolve).catch(reject);
                 return;
             }
 
@@ -836,41 +830,37 @@ export class SceneTools implements ToolExecutor {
             });
         }
 
-        if (editor?.Message?.request) {
-            return Editor.Message.request('asset-db', 'create-asset', targetPath, sceneContent);
-        }
-
         return Promise.reject(new Error('Asset database interface is not available'));
     }
 
     private async getSceneHierarchy(includeComponents: boolean = false): Promise<ToolResponse> {
-        return new Promise((resolve) => {
-            // 优先尝试使用 Editor API 查询场景节点树
-            Editor.Message.request('scene', 'query-node-tree').then((tree: any) => {
-                if (tree) {
-                    const hierarchy = this.buildHierarchy(tree, includeComponents);
-                    resolve({
-                        success: true,
-                        data: hierarchy
-                    });
-                } else {
-                    resolve({ success: false, error: 'No scene hierarchy available' });
+        try {
+            const tree = await this.requestSceneTreeData(includeComponents);
+            if (!tree) {
+                return { success: false, error: 'No scene hierarchy available' };
+            }
+
+            const rootNode = Array.isArray(tree)
+                ? {
+                    uuid: 'scene-root',
+                    name: 'Scene',
+                    type: 'cc.Scene',
+                    active: true,
+                    children: tree
                 }
-            }).catch((err: Error) => {
-                // 备用方案：使用场景脚本
-                const options = {
-                    name: 'cocos-mcp-server',
-                    method: 'getSceneHierarchy',
-                    args: [includeComponents]
-                };
-                
-                Editor.Message.request('scene', 'execute-scene-script', options).then((result: any) => {
-                    resolve(result);
-                }).catch((err2: Error) => {
-                    resolve({ success: false, error: `Direct API failed: ${err.message}, Scene script failed: ${err2.message}` });
-                });
-            });
-        });
+                : tree;
+
+            const hierarchy = this.buildHierarchy(rootNode, includeComponents);
+            return {
+                success: true,
+                data: hierarchy
+            };
+        } catch (err: any) {
+            return {
+                success: false,
+                error: err?.message || String(err)
+            };
+        }
     }
 
     private buildHierarchy(node: any, includeComponents: boolean): any {
@@ -934,15 +924,140 @@ export class SceneTools implements ToolExecutor {
     }
 
     private async closeScene(): Promise<ToolResponse> {
-        return new Promise((resolve) => {
-            Editor.Message.request('scene', 'close-scene').then(() => {
-                resolve({
-                    success: true,
-                    message: 'Scene closed successfully'
-                });
-            }).catch((err: Error) => {
-                resolve({ success: false, error: err.message });
+        try {
+            await this.sendToScenePanel('scene:close-scene');
+            return {
+                success: true,
+                message: 'Scene closed successfully'
+            };
+        } catch (err: any) {
+            return {
+                success: false,
+                error: err?.message || String(err)
+            };
+        }
+    }
+
+    private getAssetDB(): any {
+        const editor: any = Editor;
+        return editor?.assetdb || editor?.remote?.assetdb;
+    }
+
+    private async queryAssetInfoByUuid(assetdb: any, uuid: string): Promise<any> {
+        if (!assetdb || typeof assetdb.queryInfoByUuid !== 'function') {
+            return null;
+        }
+
+        return new Promise((resolve, reject) => {
+            assetdb.queryInfoByUuid(uuid, (err: Error | null, info: any) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(info || null);
+                }
             });
         });
+    }
+
+    private async sendToScenePanel(message: string, ...args: any[]): Promise<any> {
+        const editor: any = Editor;
+        if (!editor?.Ipc?.sendToPanel) {
+            throw new Error('Editor.Ipc.sendToPanel 不可用');
+        }
+
+        return new Promise((resolve, reject) => {
+            const callback = (err: Error | null, result: any) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(result);
+                }
+            };
+
+            try {
+                editor.Ipc.sendToPanel('scene', message, ...args, callback);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    private async callSceneScript(method: string, args: any[] = []): Promise<any> {
+        const editor: any = Editor;
+        if (!editor?.Scene?.callSceneScript) {
+            throw new Error('Editor.Scene.callSceneScript 不可用');
+        }
+
+        return new Promise((resolve, reject) => {
+            try {
+                editor.Scene.callSceneScript(
+                    'cocos-mcp-server',
+                    method,
+                    ...args,
+                    (err: Error | null, result: any) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(result);
+                        }
+                    }
+                );
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    private async requestSceneTreeData(includeComponents: boolean = false): Promise<any> {
+        const errors: string[] = [];
+
+        try {
+            const tree = await this.sendToScenePanel('scene:query-hierarchy');
+            if (tree) {
+                if (!includeComponents || this.treeHasComponentData(tree)) {
+                    return tree;
+                }
+            }
+        } catch (err: any) {
+            errors.push(`scene:query-hierarchy ${err?.message || err}`);
+        }
+
+        try {
+            const result = await this.callSceneScript('getSceneTreeData');
+            if (result?.success && result.data) {
+                return result.data;
+            }
+            return result;
+        } catch (err: any) {
+            errors.push(`getSceneTreeData ${err?.message || err}`);
+        }
+
+        throw new Error(errors.join(' | ') || 'Failed to query scene tree');
+    }
+
+    private treeHasComponentData(tree: any): boolean {
+        if (!tree) {
+            return false;
+        }
+
+        const nodes = Array.isArray(tree) ? tree : [tree];
+        const stack = [...nodes];
+
+        while (stack.length > 0) {
+            const node = stack.pop();
+            if (!node) {
+                continue;
+            }
+
+            if (node.__comps__ || node.components) {
+                return true;
+            }
+
+            if (Array.isArray(node.children)) {
+                stack.push(...node.children);
+            }
+        }
+
+        return false;
     }
 }

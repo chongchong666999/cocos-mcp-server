@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>场景树数据调试工具</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            margin: 0;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .output {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 600px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-top: 20px;
+        }
+
+        .json-key {
+            color: #9cdcfe;
+        }
+
+        .json-string {
+            color: #ce9178;
+        }
+
+        .json-number {
+            color: #b5cea8;
+        }
+
+        .json-boolean {
+            color: #569cd6;
+        }
+
+        .json-null {
+            color: #569cd6;
+        }
+
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .section h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+
+        input {
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            width: 400px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔍 场景树数据调试工具</h1>
+
+        <div class="section">
+            <h3>服务器配置</h3>
+            <label>MCP 服务器地址：</label>
+            <input type="text" id="serverUrl" value="http://127.0.0.1:3000/mcp">
+        </div>
+
+        <div class="section">
+            <h3>调试操作</h3>
+            <button class="btn" onclick="debugSceneTree()">1. 查看原始场景树数据</button>
+            <button class="btn" onclick="debugGetAllNodes()">2. 测试 getAllNodes</button>
+            <button class="btn" onclick="testScenePanel()">3. 测试 scene:query-hierarchy</button>
+            <button class="btn" onclick="clearOutput()">清空输出</button>
+        </div>
+
+        <div id="output" class="output">等待调试...</div>
+    </div>
+
+    <script>
+        function log(message, data = null) {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            let content = `[${timestamp}] ${message}\n`;
+
+            if (data !== null) {
+                content += syntaxHighlight(JSON.stringify(data, null, 2)) + '\n\n';
+            }
+
+            output.innerHTML += content;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function clearOutput() {
+            document.getElementById('output').innerHTML = '输出已清空\n';
+        }
+
+        function syntaxHighlight(json) {
+            json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                let cls = 'json-number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'json-key';
+                    } else {
+                        cls = 'json-string';
+                    }
+                } else if (/true|false/.test(match)) {
+                    cls = 'json-boolean';
+                } else if (/null/.test(match)) {
+                    cls = 'json-null';
+                }
+                return '<span class="' + cls + '">' + match + '</span>';
+            });
+        }
+
+        async function callMcp(tool, args = {}) {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const res = await fetch(serverUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: Date.now(),
+                    method: 'tools/call',
+                    params: { name: tool, arguments: args }
+                })
+            });
+            return res.json();
+        }
+
+        async function debugSceneTree() {
+            log('🔍 正在获取原始场景树数据...');
+
+            try {
+                // 调用一个特殊的调试工具来获取原始数据
+                const result = await callMcp('node_get_all_nodes');
+                log('✅ MCP 响应:', result);
+
+                if (result.result && result.result.content) {
+                    const content = JSON.parse(result.result.content[0].text);
+                    log('📊 解析后的内容:', content);
+
+                    if (content.data && content.data.nodes) {
+                        log(`📝 节点总数: ${content.data.totalNodes}`);
+                        log('📋 节点列表:', content.data.nodes);
+
+                        // 分析第一个节点
+                        if (content.data.nodes.length > 0) {
+                            const firstNode = content.data.nodes[0];
+                            log('🔬 第一个节点详细信息:', firstNode);
+                            log(`   - UUID: ${firstNode.uuid || '缺失'}`);
+                            log(`   - Name: ${firstNode.name || '缺失'}`);
+                            log(`   - Type: ${firstNode.type || '缺失'}`);
+                            log(`   - Path: ${firstNode.path || '空字符串'}`);
+                            log(`   - Active: ${firstNode.active}`);
+                        }
+                    }
+                }
+            } catch (error) {
+                log('❌ 错误:', { message: error.message, stack: error.stack });
+            }
+        }
+
+        async function debugGetAllNodes() {
+            log('🧪 测试 getAllNodes 功能...');
+
+            try {
+                const result = await callMcp('node_get_all_nodes');
+                log('完整响应:', result);
+            } catch (error) {
+                log('❌ 错误:', error);
+            }
+        }
+
+        async function testScenePanel() {
+            log('⚠️ 这个功能需要直接访问 Editor API，无法从浏览器测试');
+            log('建议：在 Cocos Creator 控制台中运行以下代码：');
+            log('', {
+                code: `
+// 测试 scene:query-hierarchy
+Editor.Ipc.sendToPanel('scene', 'scene:query-hierarchy', (err, result) => {
+    console.log('scene:query-hierarchy 结果:', err, result);
+});
+
+// 测试场景脚本
+Editor.Scene.callSceneScript('cocos-mcp-server', 'getSceneTreeData', (err, result) => {
+    console.log('getSceneTreeData 结果:', err, result);
+});
+                `.trim()
+            });
+        }
+
+        // 自动运行初始调试
+        window.addEventListener('load', () => {
+            log('🚀 调试工具已加载');
+            log('💡 提示：点击上方按钮开始调试');
+        });
+    </script>
+</body>
+
+</html>

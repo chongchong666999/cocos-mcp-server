@@ -300,7 +300,10 @@ export const methods: { [key: string]: (...any: any) => any } = {
             return { 
                 success: true, 
                 message: `Node ${name} created successfully`,
-                data: { uuid: node.uuid, name: node.name }
+                data: { 
+                    uuid: node.uuid || node._id, 
+                    name: node.name || node._name 
+                }
             };
         } catch (error: any) {
             return { success: false, error: error.message };
@@ -329,15 +332,12 @@ export const methods: { [key: string]: (...any: any) => any } = {
                     uuid: node.uuid,
                     name: node.name,
                     active: node.active,
-                    position: node.position,
-                    rotation: node.rotation,
-                    scale: node.scale,
+                    position: getNodePosition(node),
+                    rotation: getNodeRotation(node),
+                    scale: getNodeScale(node),
                     parent: node.parent?.uuid,
-                    children: node.children.map((child: any) => child.uuid),
-                    components: node.components.map((comp: any) => ({
-                        type: comp.constructor.name,
-                        enabled: comp.enabled
-                    }))
+                    children: (node.children || []).map((child: any) => child.uuid),
+                    components: extractComponents(node)
                 }
             };
         } catch (error: any) {

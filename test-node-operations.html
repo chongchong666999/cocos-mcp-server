@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cocos MCP Node Operations Test Suite</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 30px;
+        }
+
+        .panel {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .panel h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .config-section {
+            margin-bottom: 25px;
+        }
+
+        .config-section label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .config-section input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .config-section input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .test-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .test-btn {
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .test-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .test-btn:active {
+            transform: translateY(0);
+        }
+
+        .test-btn.secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .test-btn.success {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .status {
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.testing {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .response-panel {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 600px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .log-entry {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-left: 3px solid #667eea;
+            background: #2d2d2d;
+            border-radius: 4px;
+        }
+
+        .log-entry.error {
+            border-left-color: #f5576c;
+        }
+
+        .log-entry.success {
+            border-left-color: #00f2fe;
+        }
+
+        .log-time {
+            color: #858585;
+            font-size: 11px;
+        }
+
+        .log-tool {
+            color: #4ec9b0;
+            font-weight: bold;
+        }
+
+        .json-key {
+            color: #9cdcfe;
+        }
+
+        .json-string {
+            color: #ce9178;
+        }
+
+        .json-number {
+            color: #b5cea8;
+        }
+
+        .json-boolean {
+            color: #569cd6;
+        }
+
+        .json-null {
+            color: #569cd6;
+        }
+
+        .clear-btn {
+            background: #6c757d;
+            padding: 8px 16px;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+
+        .clear-btn:hover {
+            background: #5a6268;
+        }
+
+        .quick-tests {
+            background: #e8f4f8;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .quick-tests h3 {
+            color: #667eea;
+            margin-bottom: 12px;
+            font-size: 1.2em;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .loading {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎮 Cocos MCP Node Operations Test Suite</h1>
+            <p class="subtitle">Comprehensive testing for Cocos Creator 2.4.13 MCP Server</p>
+        </header>
+
+        <div class="main-content">
+            <!-- Left Panel: Configuration and Tests -->
+            <div class="panel">
+                <h2>⚙️ Configuration</h2>
+                
+                <div class="config-section">
+                    <label for="serverUrl">MCP Server URL:</label>
+                    <input type="text" id="serverUrl" value="http://127.0.0.1:3000/mcp" placeholder="http://127.0.0.1:3000/mcp">
+                </div>
+
+                <div class="config-section">
+                    <label for="testNodeUuid">Test Node UUID (for operations):</label>
+                    <input type="text" id="testNodeUuid" placeholder="Get from get_all_nodes or create_node">
+                </div>
+
+                <div class="config-section">
+                    <label for="parentUuid">Parent UUID (for create_node):</label>
+                    <input type="text" id="parentUuid" placeholder="Get from get_all_nodes">
+                </div>
+
+                <div id="status" class="status disconnected">
+                    ⚠️ Not connected - Click "Test Connection" to verify server
+                </div>
+
+                <div class="quick-tests">
+                    <h3>🚀 Quick Actions</h3>
+                    <div class="test-grid">
+                        <button class="test-btn success" onclick="testConnection()">Test Connection</button>
+                        <button class="test-btn success" onclick="getAllNodes()">Get All Nodes</button>
+                        <button class="test-btn secondary" onclick="runFullTestSuite()">Run Full Suite</button>
+                    </div>
+                </div>
+
+                <h2>🧪 Node Operations Tests</h2>
+                
+                <div class="test-grid">
+                    <button class="test-btn" onclick="testCreateNode()">Create Node</button>
+                    <button class="test-btn" onclick="testCreateNodeWithComponents()">Create + Components</button>
+                    <button class="test-btn" onclick="testGetNodeInfo()">Get Node Info</button>
+                    <button class="test-btn" onclick="testFindNodes()">Find Nodes</button>
+                    <button class="test-btn" onclick="testFindNodeByName()">Find By Name</button>
+                    <button class="test-btn" onclick="getAllNodes()">Get All Nodes</button>
+                    <button class="test-btn" onclick="testSetNodeProperty()">Set Property</button>
+                    <button class="test-btn" onclick="testSetNodeTransform()">Set Transform</button>
+                    <button class="test-btn" onclick="testMoveNode()">Move Node</button>
+                    <button class="test-btn" onclick="testDuplicateNode()">Duplicate Node</button>
+                    <button class="test-btn" onclick="testDeleteNode()">Delete Node</button>
+                    <button class="test-btn" onclick="testDetectNodeType()">Detect Node Type</button>
+                </div>
+            </div>
+
+            <!-- Right Panel: Response Display -->
+            <div class="panel">
+                <h2>📊 Test Results</h2>
+                <button class="clear-btn" onclick="clearLog()">Clear Log</button>
+                <div id="responsePanel" class="response-panel">
+                    <div class="log-entry">
+                        <div class="log-time">Ready to test</div>
+                        <div>Click any test button to begin...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // MCP Call Helper Function
+        async function callMcp(tool, args = {}) {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const requestBody = {
+                jsonrpc: '2.0',
+                id: Date.now(),
+                method: 'tools/call',
+                params: { name: tool, arguments: args }
+            };
+
+            logRequest(tool, args);
+
+            try {
+                const res = await fetch(serverUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                }
+
+                const data = await res.json();
+                logResponse(tool, data);
+                return data;
+            } catch (error) {
+                logError(tool, error);
+                throw error;
+            }
+        }
+
+        // Logging Functions
+        function logRequest(tool, args) {
+            const panel = document.getElementById('responsePanel');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `
+                <div class="log-time">${new Date().toLocaleTimeString()}</div>
+                <div><span class="log-tool">→ ${tool}</span></div>
+                <div style="margin-top: 8px; color: #858585;">Args: ${syntaxHighlight(JSON.stringify(args, null, 2))}</div>
+            `;
+            panel.insertBefore(entry, panel.firstChild);
+            updateStatus('testing', `Testing ${tool}...`);
+        }
+
+        function logResponse(tool, data) {
+            const panel = document.getElementById('responsePanel');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry success';
+            
+            let resultText = '';
+            if (data.result && data.result.content) {
+                try {
+                    const content = JSON.parse(data.result.content[0].text);
+                    resultText = syntaxHighlight(JSON.stringify(content, null, 2));
+                } catch (e) {
+                    resultText = syntaxHighlight(JSON.stringify(data, null, 2));
+                }
+            } else {
+                resultText = syntaxHighlight(JSON.stringify(data, null, 2));
+            }
+
+            entry.innerHTML = `
+                <div class="log-time">${new Date().toLocaleTimeString()}</div>
+                <div><span class="log-tool">✓ ${tool}</span> - Success</div>
+                <div style="margin-top: 8px;">${resultText}</div>
+            `;
+            panel.insertBefore(entry, panel.firstChild);
+            updateStatus('connected', 'Test completed successfully');
+        }
+
+        function logError(tool, error) {
+            const panel = document.getElementById('responsePanel');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry error';
+            entry.innerHTML = `
+                <div class="log-time">${new Date().toLocaleTimeString()}</div>
+                <div><span class="log-tool">✗ ${tool}</span> - Error</div>
+                <div style="margin-top: 8px; color: #f5576c;">${error.message}</div>
+            `;
+            panel.insertBefore(entry, panel.firstChild);
+            updateStatus('disconnected', `Error: ${error.message}`);
+        }
+
+        function clearLog() {
+            document.getElementById('responsePanel').innerHTML = `
+                <div class="log-entry">
+                    <div class="log-time">Log cleared</div>
+                    <div>Ready for new tests...</div>
+                </div>
+            `;
+        }
+
+        function updateStatus(type, message) {
+            const status = document.getElementById('status');
+            status.className = `status ${type}`;
+            const icons = {
+                connected: '✅',
+                disconnected: '⚠️',
+                testing: '⏳'
+            };
+            status.textContent = `${icons[type]} ${message}`;
+        }
+
+        function syntaxHighlight(json) {
+            json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                let cls = 'json-number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'json-key';
+                    } else {
+                        cls = 'json-string';
+                    }
+                } else if (/true|false/.test(match)) {
+                    cls = 'json-boolean';
+                } else if (/null/.test(match)) {
+                    cls = 'json-null';
+                }
+                return '<span class="' + cls + '">' + match + '</span>';
+            });
+        }
+
+        // Test Functions
+        async function testConnection() {
+            try {
+                const result = await callMcp('scene_get_current_scene');
+                updateStatus('connected', 'Connected to MCP Server');
+            } catch (error) {
+                updateStatus('disconnected', 'Failed to connect to MCP Server');
+            }
+        }
+
+        async function testCreateNode() {
+            const parentUuid = document.getElementById('parentUuid').value;
+            const args = {
+                name: 'TestNode_' + Date.now(),
+                nodeType: 'Node'
+            };
+            if (parentUuid) {
+                args.parentUuid = parentUuid;
+            }
+            const result = await callMcp('node_create_node', args);
+            
+            // Auto-fill the test node UUID if creation was successful
+            if (result.result && result.result.content) {
+                try {
+                    const content = JSON.parse(result.result.content[0].text);
+                    if (content.success && content.data && content.data.uuid) {
+                        document.getElementById('testNodeUuid').value = content.data.uuid;
+                    }
+                } catch (e) {}
+            }
+        }
+
+        async function testCreateNodeWithComponents() {
+            const parentUuid = document.getElementById('parentUuid').value;
+            const args = {
+                name: 'SpriteNode_' + Date.now(),
+                nodeType: 'Node',
+                components: ['cc.Sprite'],
+                initialTransform: {
+                    position: { x: 100, y: 100, z: 0 },
+                    scale: { x: 1, y: 1, z: 1 }
+                }
+            };
+            if (parentUuid) {
+                args.parentUuid = parentUuid;
+            }
+            await callMcp('node_create_node', args);
+        }
+
+        async function testGetNodeInfo() {
+            const uuid = document.getElementById('testNodeUuid').value;
+            if (!uuid) {
+                alert('Please provide a Test Node UUID');
+                return;
+            }
+            await callMcp('node_get_node_info', { uuid });
+        }
+
+        async function testFindNodes() {
+            await callMcp('node_find_nodes', { 
+                pattern: 'Test',
+                exactMatch: false
+            });
+        }
+
+        async function testFindNodeByName() {
+            await callMcp('node_find_node_by_name', { 
+                name: 'Canvas'
+            });
+        }
+
+        async function getAllNodes() {
+            const result = await callMcp('node_get_all_nodes');
+            
+            // Auto-fill parent UUID with first node if not set
+            const parentInput = document.getElementById('parentUuid');
+            if (!parentInput.value && result.result && result.result.content) {
+                try {
+                    const content = JSON.parse(result.result.content[0].text);
+                    if (content.success && content.data && content.data.nodes && content.data.nodes.length > 0) {
+                        parentInput.value = content.data.nodes[0].uuid;
+                    }
+                } catch (e) {}
+            }
+        }
+
+        async function testSetNodeProperty() {
+            const uuid = document.getElementById('testNodeUuid').value;
+            if (!uuid) {
+                alert('Please provide a Test Node UUID');
+                return;
+            }
+            await callMcp('node_set_node_property', {
+                uuid,
+                property: 'name',
+                value: 'RenamedNode_' + Date.now()
+            });
+        }
+
+        async function testSetNodeTransform() {
+            const uuid = document.getElementById('testNodeUuid').value;
+            if (!uuid) {
+                alert('Please provide a Test Node UUID');
+                return;
+            }
+            await callMcp('node_set_node_transform', {
+                uuid,
+                position: { x: 200, y: 150, z: 0 },
+                rotation: { x: 0, y: 0, z: 45 },
+                scale: { x: 1.5, y: 1.5, z: 1 }
+            });
+        }
+
+        async function testMoveNode() {
+            const uuid = document.getElementById('testNodeUuid').value;
+            const parentUuid = document.getElementById('parentUuid').value;
+            if (!uuid || !parentUuid) {
+                alert('Please provide both Test Node UUID and Parent UUID');
+                return;
+            }
+            await callMcp('node_move_node', {
+                nodeUuid: uuid,
+                newParentUuid: parentUuid,
+                siblingIndex: 0
+            });
+        }
+
+        async function testDuplicateNode() {
+            const uuid = document.getElementById('testNodeUuid').value;
+            if (!uuid) {
+                alert('Please provide a Test Node UUID');
+                return;
+            }
+            await callMcp('node_duplicate_node', {
+                uuid,
+                includeChildren: true
+            });
+        }
+
+        async function testDeleteNode() {
+            const uuid = document.getElementById('testNodeUuid').value;
+            if (!uuid) {
+                alert('Please provide a Test Node UUID');
+                return;
+            }
+            if (!confirm('Are you sure you want to delete this node?')) {
+                return;
+            }
+            await callMcp('node_delete_node', { uuid });
+            document.getElementById('testNodeUuid').value = '';
+        }
+
+        async function testDetectNodeType() {
+            const uuid = document.getElementById('testNodeUuid').value;
+            if (!uuid) {
+                alert('Please provide a Test Node UUID');
+                return;
+            }
+            await callMcp('node_detect_node_type', { uuid });
+        }
+
+        async function runFullTestSuite() {
+            if (!confirm('This will run all tests sequentially. Continue?')) {
+                return;
+            }
+
+            clearLog();
+            updateStatus('testing', 'Running full test suite...');
+
+            const tests = [
+                { name: 'Connection Test', fn: testConnection },
+                { name: 'Get All Nodes', fn: getAllNodes },
+                { name: 'Find Nodes', fn: testFindNodes },
+                { name: 'Find Node By Name', fn: testFindNodeByName },
+                { name: 'Create Node', fn: testCreateNode },
+                { name: 'Get Node Info', fn: testGetNodeInfo },
+                { name: 'Set Node Property', fn: testSetNodeProperty },
+                { name: 'Set Node Transform', fn: testSetNodeTransform },
+                { name: 'Detect Node Type', fn: testDetectNodeType },
+                { name: 'Duplicate Node', fn: testDuplicateNode }
+            ];
+
+            for (const test of tests) {
+                try {
+                    await test.fn();
+                    await new Promise(resolve => setTimeout(resolve, 500)); // Delay between tests
+                } catch (error) {
+                    console.error(`Test ${test.name} failed:`, error);
+                }
+            }
+
+            updateStatus('connected', 'Full test suite completed');
+        }
+
+        // Initialize
+        window.addEventListener('load', () => {
+            console.log('Cocos MCP Node Operations Test Suite loaded');
+        });
+    </script>
+</body>
+</html>

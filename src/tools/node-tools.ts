@@ -383,29 +383,30 @@ export class NodeTools implements ToolExecutor {
                     createNodeOptions.keepWorldTransform = true;
                 }
 
-                // 优先尝试使用 2.x 场景面板指令
+                // 直接使用场景脚本创建节点（面板 API 在 2.x 中有问题）
+                console.log('[node-tools] Creating node via scene script...');
                 let uuid: string | null = null;
+                
                 try {
-                    const panelResult = await this.createNodeUsingPanelAPI({
-                        name: args.name,
-                        parent: targetParentUuid,
-                        nodeType: args.nodeType || 'Node',
-                        assetUuid: finalAssetUuid,
-                        components: args.components,
-                        keepWorldTransform: !!args.keepWorldTransform,
-                        unlinkPrefab: !!args.unlinkPrefab
-                    });
-                    uuid = this.extractUuidFromPanelResult(panelResult);
-                } catch (panelErr) {
-                    console.warn('[node-tools] 2.x create-node API failed, fallback to main process:', panelErr);
+                    const scriptResult = await this.callSceneScript('createNode', [args.name, targetParentUuid]);
+                    console.log('[node-tools] Scene script result:', scriptResult);
+                    
+                    if (scriptResult && scriptResult.success && scriptResult.data && scriptResult.data.uuid) {
+                        uuid = scriptResult.data.uuid;
+                        console.log('[node-tools] ✅ Node created successfully:', uuid);
+                    } else {
+                        console.error('[node-tools] Scene script returned invalid result:', scriptResult);
+                        throw new Error('Scene script did not return a valid UUID');
+                    }
+                } catch (scriptErr: any) {
+                    console.error('[node-tools] ❌ Scene script failed:', scriptErr);
+                    throw new Error(`Failed to create node: ${scriptErr.message || scriptErr}`);
                 }
 
-                // 不使用dump参数处理初始变换，创建后使用set_node_transform设置
-
-                console.log('Creating node with options:', createNodeOptions);
+                console.log('[node-tools] Node UUID:', uuid);
 
                 if (!uuid) {
-                    throw new Error('Failed to determine new node UUID');
+                    throw new Error('Failed to create node: no UUID returned');
                 }
 
                 // 处理兄弟索引

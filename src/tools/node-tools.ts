@@ -743,109 +743,22 @@ export class NodeTools implements ToolExecutor {
     }
 
     private async setNodeTransform(args: any): Promise<ToolResponse> {
-        return new Promise(async (resolve) => {
+        try {
             const { uuid, position, rotation, scale } = args;
-            const updatePromises: Promise<any>[] = [];
-            const updates: string[] = [];
-            const warnings: string[] = [];
+            const transform: any = {};
             
-            try {
-                // First get node info to determine if it's 2D or 3D
-                const nodeInfoResponse = await this.getNodeInfo(uuid);
-                if (!nodeInfoResponse.success || !nodeInfoResponse.data) {
-                    resolve({ success: false, error: 'Failed to get node information' });
-                    return;
-                }
-                
-                const nodeInfo = nodeInfoResponse.data;
-                const is2DNode = this.is2DNode(nodeInfo);
-                
-                if (position) {
-                    const normalizedPosition = this.normalizeTransformValue(position, 'position', is2DNode);
-                    if (normalizedPosition.warning) {
-                        warnings.push(normalizedPosition.warning);
-                    }
-                    
-                    updatePromises.push(
-                        this.updateNodePropertyViaScene(uuid, 'position', normalizedPosition.value)
-                    );
-                    updates.push('position');
-                }
-                
-                if (rotation) {
-                    const normalizedRotation = this.normalizeTransformValue(rotation, 'rotation', is2DNode);
-                    if (normalizedRotation.warning) {
-                        warnings.push(normalizedRotation.warning);
-                    }
-                    
-                    updatePromises.push(
-                        this.updateNodePropertyViaScene(uuid, 'rotation', normalizedRotation.value)
-                    );
-                    updates.push('rotation');
-                }
-                
-                if (scale) {
-                    const normalizedScale = this.normalizeTransformValue(scale, 'scale', is2DNode);
-                    if (normalizedScale.warning) {
-                        warnings.push(normalizedScale.warning);
-                    }
-                    
-                    updatePromises.push(
-                        this.updateNodePropertyViaScene(uuid, 'scale', normalizedScale.value)
-                    );
-                    updates.push('scale');
-                }
-                
-                if (updatePromises.length === 0) {
-                    resolve({ success: false, error: 'No transform properties specified' });
-                    return;
-                }
-                
-                await Promise.all(updatePromises);
-                
-                // Verify the changes by getting updated node info
-                const updatedNodeInfo = await this.getNodeInfo(uuid);
-                const response: any = {
-                    success: true,
-                    message: `Transform properties updated: ${updates.join(', ')} ${is2DNode ? '(2D node)' : '(3D node)'}`,
-                    updatedProperties: updates,
-                    data: {
-                        nodeUuid: uuid,
-                        nodeType: is2DNode ? '2D' : '3D',
-                        appliedChanges: updates,
-                        transformConstraints: {
-                            position: is2DNode ? 'x, y only (z ignored)' : 'x, y, z all used',
-                            rotation: is2DNode ? 'z only (x, y ignored)' : 'x, y, z all used',
-                            scale: is2DNode ? 'x, y main, z typically 1' : 'x, y, z all used'
-                        }
-                    },
-                    verificationData: {
-                        nodeInfo: updatedNodeInfo.data,
-                        transformDetails: {
-                            originalNodeType: is2DNode ? '2D' : '3D',
-                            appliedTransforms: updates,
-                            timestamp: new Date().toISOString()
-                        },
-                        beforeAfterComparison: {
-                            before: nodeInfo,
-                            after: updatedNodeInfo.data
-                        }
-                    }
-                };
-                
-                if (warnings.length > 0) {
-                    response.warning = warnings.join('; ');
-                }
-                
-                resolve(response);
-                
-            } catch (err: any) {
-                resolve({ 
-                    success: false, 
-                    error: `Failed to update transform: ${err.message}` 
-                });
-            }
-        });
+            if (position) transform.position = position;
+            if (rotation) transform.rotation = rotation;
+            if (scale) transform.scale = scale;
+            
+            const result = await this.callSceneScript('setNodeTransform', [uuid, transform]);
+            return result;
+        } catch (err: any) {
+            return { 
+                success: false, 
+                error: `Failed to update transform: ${err.message || err}` 
+            };
+        }
     }
 
     private is2DNode(nodeInfo: any): boolean {
@@ -940,49 +853,34 @@ export class NodeTools implements ToolExecutor {
     }
 
     private async deleteNode(uuid: string): Promise<ToolResponse> {
-        return new Promise((resolve) => {
-            this.deleteNodes([uuid]).then(() => {
-                resolve({
-                    success: true,
-                    message: 'Node deleted successfully'
-                });
-            }).catch((err: Error) => {
-                resolve({ success: false, error: err.message });
-            });
-        });
+        try {
+            const result = await this.callSceneScript('deleteNode', [uuid]);
+            return result;
+        } catch (err: any) {
+            return { success: false, error: err.message || err };
+        }
     }
 
     private async moveNode(nodeUuid: string, newParentUuid: string, siblingIndex: number = -1): Promise<ToolResponse> {
-        return new Promise((resolve) => {
-            this.reparentNodes([nodeUuid], newParentUuid, {
-                keepWorldTransform: false,
-                siblingIndex: siblingIndex >= 0 ? siblingIndex : undefined
-            }).then(() => {
-                resolve({
-                    success: true,
-                    message: 'Node moved successfully'
-                });
-            }).catch((err: Error) => {
-                resolve({ success: false, error: err.message });
-            });
-        });
+        try {
+            const result = await this.callSceneScript('moveNode', [
+                nodeUuid,
+                newParentUuid,
+                siblingIndex >= 0 ? siblingIndex : undefined
+            ]);
+            return result;
+        } catch (err: any) {
+            return { success: false, error: err.message || err };
+        }
     }
 
     private async duplicateNode(uuid: string, includeChildren: boolean = true): Promise<ToolResponse> {
-        return new Promise((resolve) => {
-            this.duplicateNodes([uuid], includeChildren).then((result: any) => {
-                const duplicatedUuid = this.extractUuidFromPanelResult(result);
-                resolve({
-                    success: true,
-                    data: {
-                        newUuid: duplicatedUuid,
-                        message: 'Node duplicated successfully'
-                    }
-                });
-            }).catch((err: Error) => {
-                resolve({ success: false, error: err.message });
-            });
-        });
+        try {
+            const result = await this.callSceneScript('duplicateNode', [uuid, includeChildren]);
+            return result;
+        } catch (err: any) {
+            return { success: false, error: err.message || err };
+        }
     }
 
     private async detectNodeType(uuid: string): Promise<ToolResponse> {
@@ -1122,16 +1020,13 @@ export class NodeTools implements ToolExecutor {
     }
 
     private async fetchNodeDump(uuid: string): Promise<any> {
+        // 直接使用场景脚本，避免 scene:query-node 在 2.4.13 中的问题
         try {
-            const result = await this.sendToScenePanel('scene:query-node', uuid);
-            if (result) {
-                return result;
-            }
-        } catch (err) {
-            console.warn('[node-tools] scene:query-node panel fallback:', err);
+            return await this.callSceneScript('getNodeInfo', [uuid]);
+        } catch (err: any) {
+            console.error('[node-tools] Failed to fetch node dump:', err);
+            throw err;
         }
-
-        return await this.callSceneScript('getNodeInfo', [uuid]);
     }
 
     private async createNodeUsingPanelAPI(options: {

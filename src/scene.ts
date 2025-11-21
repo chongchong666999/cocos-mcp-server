@@ -619,6 +619,191 @@ export const methods: { [key: string]: (...any: any) => any } = {
         } catch (error: any) {
             return { success: false, error: error.message };
         }
+    },
+
+    /**
+     * Delete a node
+     */
+    deleteNode(nodeUuid: string) {
+        try {
+            const { director } = getCC();
+            const scene = director.getScene();
+            if (!scene) {
+                return { success: false, error: 'No active scene' };
+            }
+
+            const node = scene.getChildByUuid(nodeUuid);
+            if (!node) {
+                return { success: false, error: `Node with UUID ${nodeUuid} not found` };
+            }
+
+            const nodeName = node.name;
+            node.destroy();
+            
+            return { 
+                success: true, 
+                message: `Node '${nodeName}' deleted successfully`,
+                data: { deletedUuid: nodeUuid, deletedName: nodeName }
+            };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    },
+
+    /**
+     * Move a node to a new parent
+     */
+    moveNode(nodeUuid: string, newParentUuid: string, siblingIndex?: number) {
+        try {
+            const { director } = getCC();
+            const scene = director.getScene();
+            if (!scene) {
+                return { success: false, error: 'No active scene' };
+            }
+
+            const node = scene.getChildByUuid(nodeUuid);
+            if (!node) {
+                return { success: false, error: `Node with UUID ${nodeUuid} not found` };
+            }
+
+            const newParent = scene.getChildByUuid(newParentUuid);
+            if (!newParent) {
+                return { success: false, error: `Parent node with UUID ${newParentUuid} not found` };
+            }
+
+            const oldParentName = node.parent?.name || 'Scene';
+            node.parent = newParent;
+            
+            if (siblingIndex !== undefined && siblingIndex >= 0) {
+                node.setSiblingIndex(siblingIndex);
+            }
+
+            return { 
+                success: true, 
+                message: `Node '${node.name}' moved from '${oldParentName}' to '${newParent.name}'`,
+                data: {
+                    nodeUuid: nodeUuid,
+                    nodeName: node.name,
+                    newParentUuid: newParentUuid,
+                    newParentName: newParent.name,
+                    siblingIndex: siblingIndex
+                }
+            };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    },
+
+    /**
+     * Duplicate a node
+     */
+    duplicateNode(nodeUuid: string, includeChildren: boolean = true) {
+        try {
+            const { director, instantiate } = getCC();
+            const scene = director.getScene();
+            if (!scene) {
+                return { success: false, error: 'No active scene' };
+            }
+
+            const node = scene.getChildByUuid(nodeUuid);
+            if (!node) {
+                return { success: false, error: `Node with UUID ${nodeUuid} not found` };
+            }
+
+            // 使用 instantiate 复制节点（会自动复制子节点）
+            const duplicate = instantiate(node);
+            duplicate.name = node.name + ' Copy';
+
+            // 添加到相同的父节点
+            if (node.parent) {
+                node.parent.addChild(duplicate);
+            } else {
+                scene.addChild(duplicate);
+            }
+
+            return { 
+                success: true, 
+                message: `Node '${node.name}' duplicated successfully`,
+                data: {
+                    originalUuid: nodeUuid,
+                    originalName: node.name,
+                    newUuid: duplicate.uuid || duplicate._id,
+                    newName: duplicate.name
+                }
+            };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    },
+
+    /**
+     * Set node transform (position, rotation, scale)
+     */
+    setNodeTransform(nodeUuid: string, transform: any) {
+        try {
+            const { director } = getCC();
+            const scene = director.getScene();
+            if (!scene) {
+                return { success: false, error: 'No active scene' };
+            }
+
+            const node = scene.getChildByUuid(nodeUuid);
+            if (!node) {
+                return { success: false, error: `Node with UUID ${nodeUuid} not found` };
+            }
+
+            const updates: string[] = [];
+
+            // 设置位置
+            if (transform.position) {
+                const pos = transform.position;
+                node.setPosition(
+                    pos.x !== undefined ? pos.x : node.position.x,
+                    pos.y !== undefined ? pos.y : node.position.y,
+                    pos.z !== undefined ? pos.z : node.position.z
+                );
+                updates.push('position');
+            }
+
+            // 设置旋转
+            if (transform.rotation) {
+                const rot = transform.rotation;
+                node.setRotationFromEuler(
+                    rot.x !== undefined ? rot.x : 0,
+                    rot.y !== undefined ? rot.y : 0,
+                    rot.z !== undefined ? rot.z : 0
+                );
+                updates.push('rotation');
+            }
+
+            // 设置缩放
+            if (transform.scale) {
+                const scale = transform.scale;
+                node.setScale(
+                    scale.x !== undefined ? scale.x : node.scale.x,
+                    scale.y !== undefined ? scale.y : node.scale.y,
+                    scale.z !== undefined ? scale.z : node.scale.z
+                );
+                updates.push('scale');
+            }
+
+            return { 
+                success: true, 
+                message: `Node transform updated: ${updates.join(', ')}`,
+                data: {
+                    nodeUuid: nodeUuid,
+                    nodeName: node.name,
+                    updatedProperties: updates,
+                    currentTransform: {
+                        position: getNodePosition(node),
+                        rotation: getNodeRotation(node),
+                        scale: getNodeScale(node)
+                    }
+                }
+            };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
     }
 };
 

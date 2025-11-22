@@ -863,8 +863,9 @@ export const methods: { [key: string]: (...any: any) => any } = {
                 scene.addChild(buttonNode);
             }
 
-            // 设置主节点大小
+            // 设置主节点大小和锚点
             buttonNode.setContentSize(width, height);
+            buttonNode.setAnchorPoint(0.5, 0.5);
 
             // 2. 添加 Button 组件
             const buttonComp = buttonNode.addComponent(cc.Button);
@@ -873,33 +874,38 @@ export const methods: { [key: string]: (...any: any) => any } = {
             const bgNode = new Node('Background');
             buttonNode.addChild(bgNode);
             bgNode.setContentSize(width, height);
+            bgNode.setAnchorPoint(0.5, 0.5);
 
             // 4. 添加 Sprite 组件到 Background
             const spriteComp = bgNode.addComponent(cc.Sprite);
             spriteComp.type = cc.Sprite.Type.SLICED; // 九宫格模式
+            spriteComp.sizeMode = cc.Sprite.SizeMode.CUSTOM; // 0 - CUSTOM 模式
             
-            // 加载并设置 Background 的默认图片
-            cc.loader.loadRes(sprites.normal, cc.SpriteFrame, (err: any, spriteFrame: any) => {
-                if (!err && spriteFrame) {
-                    spriteComp.spriteFrame = spriteFrame;
-                }
-            });
+            // 直接设置 SpriteFrame 的 UUID（更可靠的方法）
+            const normalSpriteFrame = new cc.SpriteFrame();
+            normalSpriteFrame._uuid = sprites.normal;
+            spriteComp.spriteFrame = normalSpriteFrame;
 
             // 5. 添加 Widget 组件到 Background（完全对齐）
             const widgetComp = bgNode.addComponent(cc.Widget);
-            widgetComp.isAlignTop = true;
-            widgetComp.isAlignBottom = true;
-            widgetComp.isAlignLeft = true;
-            widgetComp.isAlignRight = true;
+            // 重要：先设置对齐值，再启用对齐标志
             widgetComp.top = 0;
             widgetComp.bottom = 0;
             widgetComp.left = 0;
             widgetComp.right = 0;
+            // 然后启用对齐
+            widgetComp.isAlignTop = true;
+            widgetComp.isAlignBottom = true;
+            widgetComp.isAlignLeft = true;
+            widgetComp.isAlignRight = true;
+            // 最后调用 updateAlignment 使设置生效
+            widgetComp.updateAlignment();
 
             // 6. 创建 Label 子节点
             const labelNode = new Node('Label');
             bgNode.addChild(labelNode);
             labelNode.setContentSize(width, height);
+            labelNode.setAnchorPoint(0.5, 0.5);
             labelNode.color = cc.color(0, 0, 0, 255); // 黑色
 
             // 7. 添加 Label 组件
@@ -914,33 +920,35 @@ export const methods: { [key: string]: (...any: any) => any } = {
             buttonComp.target = bgNode;
             buttonComp.transition = cc.Button.Transition.SPRITE;
             
-            // 加载所有 4 个状态的图集
-            cc.loader.loadRes(sprites.normal, cc.SpriteFrame, (err: any, normalSprite: any) => {
-                if (!err && normalSprite) {
-                    buttonComp.normalSprite = normalSprite;
-                }
-            });
+            // 直接设置所有 4 个状态的 SpriteFrame UUID
+            const normalSprite = new cc.SpriteFrame();
+            normalSprite._uuid = sprites.normal;
+            buttonComp.normalSprite = normalSprite;
             
-            cc.loader.loadRes(sprites.pressed, cc.SpriteFrame, (err: any, pressedSprite: any) => {
-                if (!err && pressedSprite) {
-                    buttonComp.pressedSprite = pressedSprite;
-                }
-            });
+            const pressedSprite = new cc.SpriteFrame();
+            pressedSprite._uuid = sprites.pressed;
+            buttonComp.pressedSprite = pressedSprite;
             
-            cc.loader.loadRes(sprites.hover, cc.SpriteFrame, (err: any, hoverSprite: any) => {
-                if (!err && hoverSprite) {
-                    buttonComp.hoverSprite = hoverSprite;
-                }
-            });
+            const hoverSprite = new cc.SpriteFrame();
+            hoverSprite._uuid = sprites.hover;
+            buttonComp.hoverSprite = hoverSprite;
             
-            cc.loader.loadRes(sprites.disabled, cc.SpriteFrame, (err: any, disabledSprite: any) => {
-                if (!err && disabledSprite) {
-                    buttonComp.disabledSprite = disabledSprite;
-                }
-            });
+            const disabledSprite = new cc.SpriteFrame();
+            disabledSprite._uuid = sprites.disabled;
+            buttonComp.disabledSprite = disabledSprite;
 
             // 标记场景为已修改并保存
             markSceneDirty();
+            
+            // 通知编辑器刷新场景视图（让图片立即显示）
+            try {
+                if (typeof Editor !== 'undefined' && Editor.Ipc && Editor.Ipc.sendToPanel) {
+                    // 刷新场景视图
+                    Editor.Ipc.sendToPanel('scene', 'scene:soft-reload');
+                }
+            } catch (error) {
+                console.warn('[scene-script] Failed to refresh scene view:', error);
+            }
 
             return {
                 success: true,

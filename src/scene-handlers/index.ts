@@ -4,7 +4,9 @@
  */
 
 export { createButtonWithTemplate } from './button-handler';
+export { createSpriteWithTemplate } from './sprite-handler';
+export { createLayoutWithTemplate } from './layout-handler';
+export { createScrollViewWithTemplate } from './scrollview-handler';
 
 // 未来可以添加更多处理器
-// export { createSpriteNode } from './sprite-handler';
 // export { createLabelNode } from './label-handler';

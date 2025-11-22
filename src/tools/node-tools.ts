@@ -1,8 +1,8 @@
 import { ToolDefinition, ToolResponse, ToolExecutor, NodeInfo } from '../types';
-import { ComponentTools } from './component-tools';
+// import { ComponentTools } from './component-tools';
 
 export class NodeTools implements ToolExecutor {
-    private componentTools = new ComponentTools();
+    // private componentTools = new ComponentTools();
     getTools(): ToolDefinition[] {
         return [
             {
@@ -19,11 +19,7 @@ export class NodeTools implements ToolExecutor {
                             type: 'string',
                             description: 'Parent node UUID. STRONGLY RECOMMENDED: Always provide this parameter. Use get_current_scene or get_all_nodes to find parent UUIDs. If not provided, node will be created at scene root.'
                         },
-                        nodeType: {
-                            type: 'string',
-                            description: 'Node type: Node (empty), 2DNode, 3DNode, or button (creates complete Button UI with Background and Label)',
-                            enum: ['Node', '2DNode', '3DNode', 'button']
-                        },
+
                         siblingIndex: {
                             type: 'number',
                             description: 'Sibling index for ordering (-1 means append at end)',
@@ -82,6 +78,11 @@ export class NodeTools implements ToolExecutor {
                             },
                             description: 'Initial transform to apply to the created node'
                         },
+                        nodeType: {
+                            type: 'string',
+                            description: 'Node type: Node (empty), 2DNode, 3DNode, or special UI templates (button, sprite, layout, scrollview)',
+                            enum: ['Node', '2DNode', '3DNode', 'button', 'sprite', 'layout', 'scrollview']
+                        },
                         text: {
                             type: 'string',
                             description: 'Button text (only used when nodeType="button")',
@@ -89,13 +90,17 @@ export class NodeTools implements ToolExecutor {
                         },
                         width: {
                             type: 'number',
-                            description: 'Button width (only used when nodeType="button")',
+                            description: 'Width (used for button, sprite, layout, scrollview)',
                             default: 100
                         },
                         height: {
                             type: 'number',
-                            description: 'Button height (only used when nodeType="button")',
+                            description: 'Height (used for button, sprite, layout, scrollview)',
                             default: 40
+                        },
+                        spriteFrameUuid: {
+                            type: 'string',
+                            description: 'Sprite Frame UUID (used when nodeType="sprite", "layout", or "scrollview")'
                         }
                     },
                     required: ['name']
@@ -348,6 +353,84 @@ export class NodeTools implements ToolExecutor {
                         return;
                     }
                 }
+
+                // 特殊处理：使用 Sprite 模板
+                if (args.nodeType === 'sprite') {
+                    console.log('[node-tools] Creating Sprite using template...');
+                    try {
+                        const { SpriteTemplate } = require('../ui-templates/sprite-template');
+                        const result = await SpriteTemplate.create({
+                            name: args.name,
+                            parentUuid: args.parentUuid,
+                            width: args.width || 40,
+                            height: args.height || 36,
+                            spriteFrameUuid: args.spriteFrameUuid
+                        });
+                        
+                        console.log('[node-tools] Sprite template result:', result);
+                        resolve(result);
+                        return;
+                    } catch (err: any) {
+                        console.error('[node-tools] Sprite template failed:', err);
+                        resolve({
+                            success: false,
+                            error: `Failed to create Sprite: ${err.message || err}`
+                        });
+                        return;
+                    }
+                }
+
+                // 特殊处理：使用 Layout 模板
+                if (args.nodeType === 'layout') {
+                    console.log('[node-tools] Creating Layout using template...');
+                    try {
+                        const { LayoutTemplate } = require('../ui-templates/layout-template');
+                        const result = await LayoutTemplate.create({
+                            name: args.name,
+                            parentUuid: args.parentUuid,
+                            width: args.width || 200,
+                            height: args.height || 150,
+                            spriteFrameUuid: args.spriteFrameUuid
+                        });
+                        
+                        console.log('[node-tools] Layout template result:', result);
+                        resolve(result);
+                        return;
+                    } catch (err: any) {
+                        console.error('[node-tools] Layout template failed:', err);
+                        resolve({
+                            success: false,
+                            error: `Failed to create Layout: ${err.message || err}`
+                        });
+                        return;
+                    }
+                }
+
+                // 特殊处理：使用 ScrollView 模板
+                if (args.nodeType === 'scrollview') {
+                    console.log('[node-tools] Creating ScrollView using template...');
+                    try {
+                        const { ScrollViewTemplate } = require('../ui-templates/scrollview-template');
+                        const result = await ScrollViewTemplate.create({
+                            name: args.name,
+                            parentUuid: args.parentUuid,
+                            width: args.width || 240,
+                            height: args.height || 250,
+                            spriteFrameUuid: args.spriteFrameUuid
+                        });
+                        
+                        console.log('[node-tools] ScrollView template result:', result);
+                        resolve(result);
+                        return;
+                    } catch (err: any) {
+                        console.error('[node-tools] ScrollView template failed:', err);
+                        resolve({
+                            success: false,
+                            error: `Failed to create ScrollView: ${err.message || err}`
+                        });
+                        return;
+                    }
+                }
                 
                 // 普通节点创建逻辑（原有代码）
                 let targetParentUuid = args.parentUuid;
@@ -469,15 +552,16 @@ export class NodeTools implements ToolExecutor {
                         await new Promise(resolve => setTimeout(resolve, 100)); // 等待节点创建完成
                         for (const componentType of args.components) {
                             try {
-                                const result = await this.componentTools.execute('add_component', {
-                                    nodeUuid: uuid,
-                                    componentType: componentType
-                                });
-                                if (result.success) {
-                                    console.log(`Component ${componentType} added successfully`);
-                                } else {
-                                    console.warn(`Failed to add component ${componentType}:`, result.error);
-                                }
+                                // const result = await this.componentTools.execute('add_component', {
+                                //     nodeUuid: uuid,
+                                //     componentType: componentType
+                                // });
+                                // if (result.success) {
+                                //     console.log(`Component ${componentType} added successfully`);
+                                // } else {
+                                //     console.warn(`Failed to add component ${componentType}:`, result.error);
+                                // }
+                                console.warn(`ComponentTools disabled, skipping add component ${componentType}`);
                             } catch (err) {
                                 console.warn(`Failed to add component ${componentType}:`, err);
                             }

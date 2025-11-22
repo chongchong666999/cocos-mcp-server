@@ -3,6 +3,9 @@ declare const Editor: any;
 
 // Import scene handlers
 import * as buttonHandler from './scene-handlers/button-handler';
+import * as spriteHandler from './scene-handlers/sprite-handler';
+import * as layoutHandler from './scene-handlers/layout-handler';
+import * as scrollviewHandler from './scene-handlers/scrollview-handler';
 
 function getCC(): any {
     if (typeof cc !== 'undefined') {
@@ -852,6 +855,48 @@ export const methods: { [key: string]: (...any: any) => any } = {
     ) {
         // 调用 button-handler
         return buttonHandler.createButtonWithTemplate(name, parentUuid, text, width, height, sprites, getCC, markSceneDirty);
+    },
+
+    /**
+     * 创建 Sprite 组件（委托给 sprite-handler）
+     */
+    createSpriteWithTemplate(
+        name: string,
+        parentUuid: string | null,
+        width: number,
+        height: number,
+        spriteFrameUuid: string
+    ) {
+        // 调用 sprite-handler
+        return spriteHandler.createSpriteWithTemplate(name, parentUuid, width, height, spriteFrameUuid, getCC, markSceneDirty);
+    },
+
+    /**
+     * 创建 Layout 组件（委托给 layout-handler）
+     */
+    createLayoutWithTemplate(
+        name: string,
+        parentUuid: string | null,
+        width: number,
+        height: number,
+        spriteFrameUuid: string
+    ) {
+        // 调用 layout-handler
+        return layoutHandler.createLayoutWithTemplate(name, parentUuid, width, height, spriteFrameUuid, getCC, markSceneDirty);
+    },
+
+    /**
+     * 创建 ScrollView 组件（委托给 scrollview-handler）
+     */
+    createScrollViewWithTemplate(
+        name: string,
+        parentUuid: string | null,
+        width: number,
+        height: number,
+        spriteFrameUuid: string
+    ) {
+        // 调用 scrollview-handler
+        return scrollviewHandler.createScrollViewWithTemplate(name, parentUuid, width, height, spriteFrameUuid, getCC, markSceneDirty);
     }
 };
 

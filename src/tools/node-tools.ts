@@ -21,9 +21,8 @@ export class NodeTools implements ToolExecutor {
                         },
                         nodeType: {
                             type: 'string',
-                            description: 'Node type: Node, 2DNode, 3DNode',
-                            enum: ['Node', '2DNode', '3DNode'],
-                            default: 'Node'
+                            description: 'Node type: Node (empty), 2DNode, 3DNode, or button (creates complete Button UI with Background and Label)',
+                            enum: ['Node', '2DNode', '3DNode', 'button']
                         },
                         siblingIndex: {
                             type: 'number',
@@ -82,6 +81,21 @@ export class NodeTools implements ToolExecutor {
                                 }
                             },
                             description: 'Initial transform to apply to the created node'
+                        },
+                        text: {
+                            type: 'string',
+                            description: 'Button text (only used when nodeType="button")',
+                            default: 'button'
+                        },
+                        width: {
+                            type: 'number',
+                            description: 'Button width (only used when nodeType="button")',
+                            default: 100
+                        },
+                        height: {
+                            type: 'number',
+                            description: 'Button height (only used when nodeType="button")',
+                            default: 40
                         }
                     },
                     required: ['name']
@@ -309,6 +323,33 @@ export class NodeTools implements ToolExecutor {
     private async createNode(args: any): Promise<ToolResponse> {
         return new Promise(async (resolve) => {
             try {
+                // 检查是否为特殊 UI 类型
+                if (args.nodeType === 'button') {
+                    console.log('[node-tools] Creating Button using template...');
+                    try {
+                        const { ButtonTemplate } = require('../ui-templates/button-template');
+                        const result = await ButtonTemplate.create({
+                            name: args.name,
+                            parentUuid: args.parentUuid,
+                            text: args.text || 'button',
+                            width: args.width || 100,
+                            height: args.height || 40
+                        });
+                        
+                        console.log('[node-tools] Button template result:', result);
+                        resolve(result);
+                        return;
+                    } catch (err: any) {
+                        console.error('[node-tools] Button template failed:', err);
+                        resolve({
+                            success: false,
+                            error: `Failed to create Button: ${err.message || err}`
+                        });
+                        return;
+                    }
+                }
+                
+                // 普通节点创建逻辑（原有代码）
                 let targetParentUuid = args.parentUuid;
                 
                 // 如果没有提供父节点UUID，获取场景根节点

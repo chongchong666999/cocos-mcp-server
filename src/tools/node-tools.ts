@@ -81,7 +81,7 @@ export class NodeTools implements ToolExecutor {
                         nodeType: {
                             type: 'string',
                             description: 'Node type: Node (empty), 2DNode, 3DNode, or special UI templates (button, sprite, layout, scrollview)',
-                            enum: ['Node', '2DNode', '3DNode', 'button', 'sprite', 'layout', 'scrollview']
+                            enum: ['Node', '2DNode', '3DNode', 'button', 'sprite', 'layout', 'scrollview', 'slider', 'pageview', 'progressbar', 'toggle']
                         },
                         text: {
                             type: 'string',
@@ -428,6 +428,90 @@ export class NodeTools implements ToolExecutor {
                             success: false,
                             error: `Failed to create ScrollView: ${err.message || err}`
                         });
+                        return;
+                    }
+                }
+
+                // Slider
+                if (args.nodeType === 'slider') {
+                    console.log('[node-tools] Creating Slider using template...');
+                    try {
+                        const { SliderTemplate } = require('../ui-templates/slider-template');
+                        const result = await SliderTemplate.create({
+                            name: args.name,
+                            parentUuid: args.parentUuid,
+                            width: args.width || 300,
+                            height: args.height || 20
+                        });
+                        console.log('[node-tools] Slider template result:', result);
+                        resolve(result);
+                        return;
+                    } catch (err: any) {
+                        console.error('[node-tools] Slider template failed:', err);
+                        resolve({ success: false, error: `Failed to create Slider: ${err.message || err}` });
+                        return;
+                    }
+                }
+
+                // PageView
+                if (args.nodeType === 'pageview') {
+                    console.log('[node-tools] Creating PageView using template...');
+                    try {
+                        const { PageViewTemplate } = require('../ui-templates/pageview-template');
+                        const result = await PageViewTemplate.create({
+                            name: args.name,
+                            parentUuid: args.parentUuid,
+                            width: args.width || 400,
+                            height: args.height || 350
+                        });
+                        console.log('[node-tools] PageView template result:', result);
+                        resolve(result);
+                        return;
+                    } catch (err: any) {
+                        console.error('[node-tools] PageView template failed:', err);
+                        resolve({ success: false, error: `Failed to create PageView: ${err.message || err}` });
+                        return;
+                    }
+                }
+
+                // ProgressBar
+                if (args.nodeType === 'progressbar') {
+                    console.log('[node-tools] Creating ProgressBar using template...');
+                    try {
+                        const { ProgressBarTemplate } = require('../ui-templates/progressbar-template');
+                        const result = await ProgressBarTemplate.create({
+                            name: args.name,
+                            parentUuid: args.parentUuid,
+                            width: args.width || 300,
+                            height: args.height || 15
+                        });
+                        console.log('[node-tools] ProgressBar template result:', result);
+                        resolve(result);
+                        return;
+                    } catch (err: any) {
+                        console.error('[node-tools] ProgressBar template failed:', err);
+                        resolve({ success: false, error: `Failed to create ProgressBar: ${err.message || err}` });
+                        return;
+                    }
+                }
+
+                // Toggle
+                if (args.nodeType === 'toggle') {
+                    console.log('[node-tools] Creating Toggle using template...');
+                    try {
+                        const { ToggleTemplate } = require('../ui-templates/toggle-template');
+                        const result = await ToggleTemplate.create({
+                            name: args.name,
+                            parentUuid: args.parentUuid,
+                            width: args.width || 28,
+                            height: args.height || 28
+                        });
+                        console.log('[node-tools] Toggle template result:', result);
+                        resolve(result);
+                        return;
+                    } catch (err: any) {
+                        console.error('[node-tools] Toggle template failed:', err);
+                        resolve({ success: false, error: `Failed to create Toggle: ${err.message || err}` });
                         return;
                     }
                 }

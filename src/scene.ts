@@ -6,6 +6,10 @@ import * as buttonHandler from './scene-handlers/button-handler';
 import * as spriteHandler from './scene-handlers/sprite-handler';
 import * as layoutHandler from './scene-handlers/layout-handler';
 import * as scrollviewHandler from './scene-handlers/scrollview-handler';
+import * as sliderHandler from './scene-handlers/slider-handler';
+import * as pageviewHandler from './scene-handlers/pageview-handler';
+import * as progressbarHandler from './scene-handlers/progressbar-handler';
+import * as toggleHandler from './scene-handlers/toggle-handler';
 
 function getCC(): any {
     if (typeof cc !== 'undefined') {
@@ -162,8 +166,10 @@ function extractComponents(node: any): any[] {
             return;
         }
 
+        const typeName = comp.__classname__ || comp.constructor?.name || 'cc.Component';
         result.push({
-            __type__: comp.__classname__ || comp.constructor?.name || 'cc.Component',
+            __type__: typeName,
+            type: typeName,
             enabled: comp.enabled !== undefined ? comp.enabled : true,
             uuid: comp.uuid || comp._id || '',
             nodeUuid: comp.node?.uuid || node.uuid || node._id || ''
@@ -348,12 +354,22 @@ export const methods: { [key: string]: (...any: any) => any } = {
                 return { success: false, error: `Node with UUID ${nodeUuid} not found` };
             }
 
+            const size = typeof node.getContentSize === 'function'
+                ? node.getContentSize()
+                : node._contentSize || { width: 0, height: 0 };
+            const anchor = typeof node.getAnchorPoint === 'function'
+                ? node.getAnchorPoint()
+                : { x: node.anchorX ?? 0.5, y: node.anchorY ?? 0.5 };
+
             return {
                 success: true,
                 data: {
                     uuid: node.uuid,
                     name: node.name,
                     active: node.active,
+                    width: size.width,
+                    height: size.height,
+                    anchor: { x: anchor.x, y: anchor.y },
                     position: getNodePosition(node),
                     rotation: getNodeRotation(node),
                     scale: getNodeScale(node),
@@ -897,6 +913,54 @@ export const methods: { [key: string]: (...any: any) => any } = {
     ) {
         // 调用 scrollview-handler
         return scrollviewHandler.createScrollViewWithTemplate(name, parentUuid, width, height, spriteFrameUuid, getCC, markSceneDirty);
+    },
+
+    /**
+     * 创建 Slider 组件（委托给 slider-handler）
+     */
+    createSliderWithTemplate(
+        name: string,
+        parentUuid: string | null,
+        width: number,
+        height: number
+    ) {
+        return sliderHandler.createSliderWithTemplate(name, parentUuid, width, height, getCC, markSceneDirty);
+    },
+
+    /**
+     * 创建 PageView 组件（委托给 pageview-handler）
+     */
+    createPageViewWithTemplate(
+        name: string,
+        parentUuid: string | null,
+        width: number,
+        height: number
+    ) {
+        return pageviewHandler.createPageViewWithTemplate(name, parentUuid, width, height, getCC, markSceneDirty);
+    },
+
+    /**
+     * 创建 ProgressBar 组件（委托给 progressbar-handler）
+     */
+    createProgressBarWithTemplate(
+        name: string,
+        parentUuid: string | null,
+        width: number,
+        height: number
+    ) {
+        return progressbarHandler.createProgressBarWithTemplate(name, parentUuid, width, height, getCC, markSceneDirty);
+    },
+
+    /**
+     * 创建 Toggle 组件（委托给 toggle-handler）
+     */
+    createToggleWithTemplate(
+        name: string,
+        parentUuid: string | null,
+        width: number,
+        height: number
+    ) {
+        return toggleHandler.createToggleWithTemplate(name, parentUuid, width, height, getCC, markSceneDirty);
     }
 };
 
